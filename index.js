@@ -1,16 +1,12 @@
-// Servidor Lucas Krausche v5 - Correcoes criticas
-// Arquitetura: Railway + Manychat (sem Supabase)
+// Servidor Lucas Krausche v5.1 - Buffer de 10s para agrupar mensagens
+// Arquitetura: Railway + Manychat
 //
-// MUDANCAS:
-// - Prompt com regras anti-agressividade (NUNCA briga com usuario)
-// - Suporte a mensagens longas (sem truncamento)
-// - Buffer de mensagens em pedacos (3 segundos)
-// - Logs detalhados para investigacao
-// - Endpoint /debug pra ver historico de qualquer usuario
+// MUDANCAS v5.1:
+// - Buffer aumentado de 3s para 10s (tempo natural de digitacao)
+// - Mensagem de "digitando" desativada (Manychat ja faz isso)
 
 const express = require('express');
 const app = express();
-// IMPORTANTE: aumentar limite de tamanho do body para mensagens longas
 app.use(express.json({ limit: '10mb' }));
 
 // ─────────────────────────────────────────
@@ -163,15 +159,14 @@ function smartTruncate(history) {
 }
 
 // ─────────────────────────────────────────
-// BUFFER DE MENSAGENS EM PEDACOS
-// Quando o usuario manda varias mensagens em sequencia rapida
+// BUFFER DE MENSAGENS EM PEDACOS (10 SEGUNDOS)
+// Tempo natural pro usuario terminar de digitar varias mensagens
 // ─────────────────────────────────────────
 const messageBuffers = {};
-const BUFFER_WAIT_MS = 3000;
+const BUFFER_WAIT_MS = 10000; // 10 segundos
 
 // ─────────────────────────────────────────
 // HISTORICO DETALHADO POR USUARIO (pra debug)
-// Guarda em memoria as ultimas 50 mensagens de cada usuario
 // ─────────────────────────────────────────
 const userLogs = {};
 const MAX_LOG_PER_USER = 50;
@@ -273,14 +268,13 @@ async function processBuffered(subscriber_id) {
 }
 
 // ─────────────────────────────────────────
-// WEBHOOK PRINCIPAL - com buffer
+// WEBHOOK PRINCIPAL - aguarda 10s pra agrupar
 // ─────────────────────────────────────────
 app.post('/webhook', async (req, res) => {
   const { subscriber_id, last_input_text, image_url } = req.body;
   const userText = (last_input_text || '').trim();
 
-  // LOG CRITICO: registra exatamente o que chegou do Manychat
-  console.log(`[${subscriber_id}] WEBHOOK RECEBIDO. Texto: ${userText.length} chars. Imagem: ${!!image_url}`);
+  console.log(`[${subscriber_id}] WEBHOOK. Texto: ${userText.length} chars. Imagem: ${!!image_url}`);
   if (userText.length > 0) {
     console.log(`[${subscriber_id}] PREVIEW: ${userText.substring(0, 200)}${userText.length > 200 ? '...' : ''}`);
   }
@@ -298,30 +292,41 @@ app.post('/webhook', async (req, res) => {
     });
   }
 
-  // Inicializa buffer
+  // Inicializa buffer pra esse usuario
   if (!messageBuffers[subscriber_id]) {
-    messageBuffers[subscriber_id] = { messages: [], images: [], timer: null };
+    messageBuffers[subscriber_id] = { messages: [], images: [], lastUpdate: Date.now() };
   }
 
   // Adiciona ao buffer
   if (userText) messageBuffers[subscriber_id].messages.push(userText);
   if (image_url) messageBuffers[subscriber_id].images.push(image_url);
+  messageBuffers[subscriber_id].lastUpdate = Date.now();
 
-  // Aguarda 3 segundos para agrupar mensagens em pedacos
+  // Aguarda 10 segundos
+  // Se o LEAD continuar digitando, lastUpdate fica sendo atualizado por outras chamadas
   await new Promise(resolve => setTimeout(resolve, BUFFER_WAIT_MS));
 
-  // Verifica se ainda tem buffer (pode ter sido processado por outra chamada)
+  // Verifica se o buffer ainda esta "fresco" ou foi atualizado por outra mensagem
   if (!messageBuffers[subscriber_id]) {
+    // Buffer ja foi processado por outra chamada
     return res.json({ messages: [{ type: 'text', text: '' }] });
   }
 
+  const timeSinceLastUpdate = Date.now() - messageBuffers[subscriber_id].lastUpdate;
+  if (timeSinceLastUpdate < BUFFER_WAIT_MS - 500) {
+    // O usuario mandou outra mensagem nos ultimos segundos
+    // Essa chamada nao deve processar, outra chamada mais recente vai processar
+    console.log(`[${subscriber_id}] Buffer ainda recebendo mensagens, abortando essa chamada`);
+    return res.json({ messages: [{ type: 'text', text: '' }] });
+  }
+
+  // Processa todas as mensagens agrupadas
   const reply = await processBuffered(subscriber_id);
   res.json({ messages: [{ type: 'text', text: reply || 'Pode repetir, por favor?' }] });
 });
 
 // ─────────────────────────────────────────
-// ENDPOINT DE DEBUG - investigacao em tempo real
-// Acesse: /debug/SUBSCRIBER_ID
+// ENDPOINT DE DEBUG
 // ─────────────────────────────────────────
 app.get('/debug/:subscriber_id', (req, res) => {
   const id = req.params.subscriber_id;
@@ -336,7 +341,7 @@ app.get('/debug/:subscriber_id', (req, res) => {
   });
 });
 
-// Reset de sessao especifica (caso o usuario esteja com problema)
+// Reset de sessao
 app.post('/reset/:subscriber_id', (req, res) => {
   const id = req.params.subscriber_id;
   delete sessions[id];
@@ -345,18 +350,19 @@ app.post('/reset/:subscriber_id', (req, res) => {
   res.json({ success: true, message: `Sessao de ${id} resetada` });
 });
 
-// Stats gerais
+// Stats
 app.get('/stats', (req, res) => {
   const userIds = Object.keys(sessions);
   res.json({
     totalUsers: userIds.length,
     totalMessages: userIds.reduce((sum, id) => sum + sessions[id].length, 0),
     maxHistory: MAX_HISTORY,
-    activeBuffers: Object.keys(messageBuffers).length
+    activeBuffers: Object.keys(messageBuffers).length,
+    bufferWaitSeconds: BUFFER_WAIT_MS / 1000
   });
 });
 
-app.get('/', (req, res) => res.send('Agente Lucas v5 rodando!'));
+app.get('/', (req, res) => res.send('Agente Lucas v5.1 rodando - buffer 10s!'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor v5 rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`Servidor v5.1 rodando na porta ${PORT} - buffer de ${BUFFER_WAIT_MS/1000}s`));
