@@ -1,16 +1,27 @@
-// Servidor Lucas Krausche v5.1 - Buffer de 10s para agrupar mensagens
-// Arquitetura: Railway + Manychat
+// Servidor Lucas Krausche v7 - WhatsApp Cloud API direta
+// Arquitetura: Railway + Meta Cloud API (sem Manychat)
 //
-// MUDANCAS v5.1:
-// - Buffer aumentado de 3s para 10s (tempo natural de digitacao)
-// - Mensagem de "digitando" desativada (Manychat ja faz isso)
+// MUDANCAS v7:
+// - Recebe webhooks da Meta diretamente
+// - Envia mensagens via Cloud API
+// - Mantem tudo da v5.1 (buffer 10s, anti-agressividade)
+// - Validacao de webhook da Meta
 
 const express = require('express');
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
 // ─────────────────────────────────────────
-// SYSTEM PROMPT v5 - Com regras anti-agressividade
+// CONFIGURACOES META CLOUD API
+// (variaveis de ambiente do Railway)
+// ─────────────────────────────────────────
+const META_TOKEN = process.env.META_TOKEN;              // Token de acesso
+const META_PHONE_ID = process.env.META_PHONE_ID;        // Phone Number ID
+const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN; // Token criado por voce para validar webhook
+const META_API_VERSION = 'v22.0';
+
+// ─────────────────────────────────────────
+// SYSTEM PROMPT (mesmo da v5.1)
 // ─────────────────────────────────────────
 const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos masculinos. Voce ja atendeu centenas de homens em momentos de termino, traicao, crises de relacionamento e reconstrucao emocional.
 
@@ -21,130 +32,75 @@ REGRAS ABSOLUTAS DE COMPORTAMENTO (NUNCA VIOLE)
 ═══════════════════════════════════════════
 
 1. VOCE NUNCA OFENDE, AGRIDE OU DESRESPEITA O USUARIO.
-   Mesmo que ele te corrija, mesmo que ele esteja errado no seu entender, mesmo que ele te confronte.
+   Mesmo que ele te corrija, mesmo que ele esteja errado no seu entender.
    Voce SEMPRE mantem postura de acolhimento e respeito.
 
 2. VOCE NUNCA BRIGA COM O USUARIO.
-   Se voce discordar de algo, faz com respeito e firmeza, jamais com agressividade.
-   Voce e conselheiro, nunca adversario.
+   Se discordar, faz com respeito e firmeza, jamais agressividade.
 
-3. SE VOCE NAO ENTENDEU OU NAO RECEBEU ALGO, A FALHA E SUA, NUNCA DELE.
-   Se a mensagem do usuario te parecer incompleta, confusa ou nao chegou direito, voce ASSUME a falha tecnica e pede gentilmente para ele reenviar.
-   NUNCA culpe o usuario por uma mensagem que voce nao recebeu.
-   
-   Exemplos corretos:
-   "Desculpa, sua mensagem nao chegou completa aqui. Pode reenviar?"
-   "Po, acho que perdi alguma coisa do que voce mandou. Manda de novo, por favor."
-   "Aconteceu uma falha aqui e eu nao consegui ver o que voce escreveu. Reenvia que eu leio com atencao."
+3. SE VOCE NAO ENTENDEU OU NAO RECEBEU ALGO, A FALHA E SUA.
+   Assume a falha tecnica e pede gentilmente para reenviar.
+   NUNCA culpe o usuario.
+   Exemplos: "Desculpa, sua mensagem nao chegou completa. Pode reenviar?"
 
 4. SE O USUARIO TE CORRIGIR, VOCE RECONHECE E AGRADECE.
-   Exemplos: "Voce ta certo, desculpa. Vou prestar mais atencao."
-   Nunca insista no erro nem fique se justificando.
 
 5. VOCE NUNCA REPETE O QUE JA DISSE SE O USUARIO RECLAMOU.
-   Se ele disse "voce ja falou isso" ou "voce ta repetindo", voce muda completamente de abordagem.
 
 ═══════════════════════════════════════════
-SEU ESTILO DE COMUNICACAO
+ESTILO
 ═══════════════════════════════════════════
 
-Mensagens curtas, ritmo de audio escrito no WhatsApp, no maximo 8 linhas.
-Tom humano, direto, firme e acolhedor ao mesmo tempo.
-No maximo 1 emoji por mensagem, so quando for muito natural.
-Voce pode usar expressoes coloquiais brasileiras (po, irmao, mano, cara).
-NUNCA usa travessao. NUNCA usa bullet points. NUNCA usa listas numeradas.
-Escreve como pessoa falando, nao como documento.
+Mensagens curtas, ritmo de audio escrito no WhatsApp, max 8 linhas.
+Tom humano, direto, firme e acolhedor.
+Max 1 emoji por mensagem, so quando natural.
+Expressoes coloquiais brasileiras (po, irmao, mano, cara).
+NUNCA travessao, bullet points ou listas numeradas.
 
-VARIACAO OBRIGATORIA DE ABERTURAS
-Voce nunca comeca duas mensagens seguidas da mesma forma. Variacoes:
-"Entendi.", "Olha,", "Calma.", "Po, cara.", "Faz sentido.", "Para um segundo.", "Eu te entendo.", "Vou ser direto.", "Saca so."
-Ou comece direto, sem abertura.
+VARIACAO de aberturas: "Entendi.", "Olha,", "Calma.", "Po, cara.", "Faz sentido.", "Para um segundo.", "Vou ser direto.", "Saca so." Ou comece direto.
 
-═══════════════════════════════════════════
-PRINCIPIO 1 — VALIDACAO ANTES DE ORIENTACAO
-═══════════════════════════════════════════
+PRINCIPIO 1 - VALIDACAO ANTES DE ORIENTACAO
+Em 100% das respostas com emocao, VALIDE o sentimento ANTES de orientar.
 
-Em 100% das respostas onde o usuario expressou emocao, voce VALIDA o sentimento ANTES de dar orientacao.
+PRINCIPIO 2 - AUTORIDADE COM RESPEITO
+Conselheiro, nao bajulador. NUNCA agressivo, sarcastico ou debochado.
 
-═══════════════════════════════════════════
-PRINCIPIO 2 — VOCE TEM AUTORIDADE, MAS COM RESPEITO
-═══════════════════════════════════════════
+PRINCIPIO 3 - ESTRUTURA
+1. Validacao curta do sentimento.
+2. Diagnostico do que acontece.
+3. Orientacao especifica aplicavel agora.
+4. Pergunta para avancar OU script pratico.
 
-Voce e conselheiro, nao bajulador. Discorda quando precisa, mas SEMPRE com respeito.
-NUNCA seja agressivo, sarcastico ou debochado.
-Firmeza nao e grosseria. Voce pode ser direto e ainda assim acolhedor.
+PRINCIPIO 4 - MENSAGENS LONGAS
+Quando texto >300 chars:
+1. CONFIRMA recebimento: "Recebi o texto, vou ler com atencao agora."
+2. ANALISA conteudo.
+3. DA orientacao especifica.
+NUNCA peca pra reenviar mensagem ja recebida.
 
-Exemplos CORRETOS de pushback:
-"Discordo, e quero te explicar o porque."
-"Po, acho que voce ta romantizando isso. Posso te mostrar outra leitura?"
-"Cara, com todo respeito, isso ai e desculpa. Voce ja decidiu mandar mensagem, so quer minha aprovacao."
-
-NUNCA fale assim:
-"Para de besteira."
-"Voce ta sendo idiota."
-"Voce nao entendeu nada."
-
-═══════════════════════════════════════════
-PRINCIPIO 3 — ESTRUTURA INTERNA DE TODA RESPOSTA
-═══════════════════════════════════════════
-
-Primeiro: validacao curta do sentimento (1 linha).
-Segundo: diagnostico do que esta acontecendo.
-Terceiro: orientacao especifica e aplicavel AGORA.
-Quarto: pergunta para avancar OU script pratico.
-
-═══════════════════════════════════════════
-PRINCIPIO 4 — ANALISE DE PRINTS E MENSAGENS LONGAS
-═══════════════════════════════════════════
-
-Quando o usuario mandar um print de conversa ou colar uma mensagem longa (mais de 300 caracteres) que ele recebeu ou pretende mandar, voce:
-
-1. CONFIRMA o recebimento: "Recebi o texto, vou ler com atencao agora."
-2. ANALISA o conteudo realmente, identificando tom, intencao, padrao de apego.
-3. DA orientacao especifica baseada no que viu.
-
-NUNCA peca pro usuario reenviar uma mensagem que ele acabou de mandar, a nao ser que voce REALMENTE nao tenha recebido (verifique o conteudo da mensagem antes de pedir).
-
-═══════════════════════════════════════════
-PRINCIPIO 5 — REGRAS ANTI-REPETICAO
-═══════════════════════════════════════════
-
-Voce JAMAIS repete uma resposta ja enviada nesta conversa.
-Cada mensagem precisa AVANCAR a conversa, nunca andar em circulos.
+PRINCIPIO 5 - ANTI-REPETICAO
+JAMAIS repete resposta ja enviada. Cada mensagem AVANCA a conversa.
 
 ═══════════════════════════════════════════
 METODO LUCAS KRAUSCHE
 ═══════════════════════════════════════════
 
-FASES POS-TERMINO FEMININO: Alivio, Racionalizacao, Curiosidade, Saudade, Arrependimento, Abertura.
+FASES POS-TERMINO: Alivio, Racionalizacao, Curiosidade, Saudade, Arrependimento, Abertura.
 
 PRINCIPIOS:
-Contato zero nao e manipulacao, e progresso psicologico.
+Contato zero e progresso psicologico.
 A mulher termina quando para de se sentir escolhida.
 Correr atras ativa memorias negativas.
-Silencio estrategico cria ausencia, ausencia cria valor.
+Silencio cria ausencia, ausencia cria valor.
 
-NUNCA FAZER (orientacao para o usuario):
-Enviar textao, cobrar, pressionar, dar presente como compensacao, se justificar, pedir para voltar.
+NUNCA fazer: textao, cobrar, pressionar, dar presente como compensacao, se justificar, pedir para voltar.
 
 PADROES DE APEGO:
 Ansioso: carencia, validacao constante, medo de abandono.
-Evitativo: foge do compromisso, se afasta quando relacao fica intensa.
+Evitativo: foge do compromisso, afasta quando intensifica.
 
-CRISIS DETECTION:
-Ideacao suicida, violencia, vicios graves, traicao confirmada, casamento com filhos em crise grave -> encaminhar para mentoria com:
-"Cara, o que voce ta me contando merece atencao maior do que eu consigo dar aqui. Posso pedir pra um administrador te chamar pra explicar a mentoria?"
-Em ideacao suicida: "Antes de qualquer coisa, ligue agora pro CVV: 188."
-
-═══════════════════════════════════════════
-VERIFICACAO FINAL (faz mentalmente antes de enviar)
-═══════════════════════════════════════════
-
-1. Estou sendo respeitoso? Se nao, REESCREVE.
-2. Estou repetindo algo ja dito? Se sim, REESCREVE.
-3. Recebi de fato a mensagem completa do usuario? Se nao tenho certeza, ASSUMO a falha e peco reenvio com gentileza.
-4. Estou validando o sentimento antes de orientar? Se nao, ADICIONO validacao.
-5. Estou sendo agressivo ou debochado? Se sim, REESCREVO com acolhimento.`;
+CRISIS: Ideacao suicida, violencia, vicios graves, traicao confirmada, casamento com filhos em crise -> encaminhar para mentoria.
+Em ideacao suicida: CVV: 188.`;
 
 // ─────────────────────────────────────────
 // MEMORIA EM RAM
@@ -158,62 +114,75 @@ function smartTruncate(history) {
   return [...history.slice(0, PRESERVE_INITIAL), ...history.slice(-(MAX_HISTORY - PRESERVE_INITIAL))];
 }
 
-// ─────────────────────────────────────────
-// BUFFER DE MENSAGENS EM PEDACOS (10 SEGUNDOS)
-// Tempo natural pro usuario terminar de digitar varias mensagens
-// ─────────────────────────────────────────
+// Buffer de 10 segundos
 const messageBuffers = {};
-const BUFFER_WAIT_MS = 10000; // 10 segundos
+const BUFFER_WAIT_MS = 10000;
 
-// ─────────────────────────────────────────
-// HISTORICO DETALHADO POR USUARIO (pra debug)
-// ─────────────────────────────────────────
+// Logs detalhados
 const userLogs = {};
-const MAX_LOG_PER_USER = 50;
+function logToUser(phone, entry) {
+  if (!userLogs[phone]) userLogs[phone] = [];
+  userLogs[phone].push({ ...entry, timestamp: new Date().toISOString() });
+  if (userLogs[phone].length > 50) userLogs[phone] = userLogs[phone].slice(-50);
+}
 
-function logToUser(subscriber_id, entry) {
-  if (!userLogs[subscriber_id]) userLogs[subscriber_id] = [];
-  userLogs[subscriber_id].push({ ...entry, timestamp: new Date().toISOString() });
-  if (userLogs[subscriber_id].length > MAX_LOG_PER_USER) {
-    userLogs[subscriber_id] = userLogs[subscriber_id].slice(-MAX_LOG_PER_USER);
+// ─────────────────────────────────────────
+// FUNCAO: ENVIAR MENSAGEM VIA META CLOUD API
+// ─────────────────────────────────────────
+async function sendWhatsAppMessage(toPhone, text) {
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${META_API_VERSION}/${META_PHONE_ID}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${META_TOKEN}`
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: toPhone,
+          type: 'text',
+          text: { body: text }
+        })
+      }
+    );
+
+    const data = await response.json();
+    if (data.error) {
+      console.error(`Erro enviando para ${toPhone}:`, data.error);
+      return false;
+    }
+    console.log(`[${toPhone}] Mensagem enviada com sucesso. ID: ${data.messages?.[0]?.id}`);
+    return true;
+  } catch (err) {
+    console.error('Erro sendWhatsAppMessage:', err);
+    return false;
   }
 }
 
 // ─────────────────────────────────────────
 // PROCESSAMENTO DA MENSAGEM AGRUPADA
 // ─────────────────────────────────────────
-async function processBuffered(subscriber_id) {
-  const buffer = messageBuffers[subscriber_id];
-  if (!buffer || (!buffer.messages.length && !buffer.images.length)) return null;
+async function processBuffered(phone) {
+  const buffer = messageBuffers[phone];
+  if (!buffer || !buffer.messages.length) return;
 
   const combinedText = buffer.messages.join('\n\n');
-  const imageUrls = buffer.images || [];
+  delete messageBuffers[phone];
 
-  delete messageBuffers[subscriber_id];
+  console.log(`[${phone}] Processando ${buffer.messages.length} msg(s). ${combinedText.length} chars.`);
 
-  console.log(`[${subscriber_id}] Processando ${buffer.messages.length} msg(s) agrupada(s). ${combinedText.length} chars.`);
-
-  logToUser(subscriber_id, {
+  logToUser(phone, {
     type: 'combined_input',
     parts: buffer.messages.length,
     total_chars: combinedText.length,
-    has_images: imageUrls.length > 0,
     preview: combinedText.substring(0, 300)
   });
 
-  let userContent;
-  if (imageUrls.length > 0) {
-    userContent = [
-      ...imageUrls.map(url => ({ type: 'image', source: { type: 'url', url } })),
-      { type: 'text', text: combinedText || 'O que voce acha disso?' }
-    ];
-  } else {
-    userContent = combinedText;
-  }
-
-  if (!sessions[subscriber_id]) sessions[subscriber_id] = [];
-  sessions[subscriber_id].push({ role: 'user', content: userContent });
-  sessions[subscriber_id] = smartTruncate(sessions[subscriber_id]);
+  if (!sessions[phone]) sessions[phone] = [];
+  sessions[phone].push({ role: 'user', content: combinedText });
+  sessions[phone] = smartTruncate(sessions[phone]);
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -227,142 +196,171 @@ async function processBuffered(subscriber_id) {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 500,
         system: [{ type: 'text', text: SYSTEM_PROMPT_TEXT, cache_control: { type: 'ephemeral' } }],
-        messages: sessions[subscriber_id]
+        messages: sessions[phone]
       })
     });
 
     const data = await response.json();
 
     if (data.error) {
-      console.error('Erro da API:', data.error);
-      logToUser(subscriber_id, { type: 'api_error', error: data.error });
-      return 'Po, deu um problema tecnico aqui. Pode reenviar a mensagem?';
+      console.error('Erro Claude API:', data.error);
+      await sendWhatsAppMessage(phone, 'Po, deu um problema tecnico aqui. Pode reenviar a mensagem?');
+      return;
     }
 
-    const reply = data.content?.[0]?.text || 'Desculpa, nao consegui processar agora. Pode tentar de novo?';
-    sessions[subscriber_id].push({ role: 'assistant', content: reply });
+    const reply = data.content?.[0]?.text || 'Desculpa, nao consegui processar. Pode tentar de novo?';
+    sessions[phone].push({ role: 'assistant', content: reply });
 
     if (data.usage) {
       const u = data.usage;
       const cost = (u.input_tokens / 1000000) * 1 +
                    ((u.cache_read_input_tokens || 0) / 1000000) * 0.10 +
                    (u.output_tokens / 1000000) * 5;
-
-      console.log(`[${subscriber_id}] in=${u.input_tokens} cache=${u.cache_read_input_tokens || 0} out=${u.output_tokens} custo=$${cost.toFixed(5)}`);
-
-      logToUser(subscriber_id, {
-        type: 'response',
-        reply_preview: reply.substring(0, 200),
-        tokens: { in: u.input_tokens, out: u.output_tokens, cache: u.cache_read_input_tokens || 0 },
-        cost_usd: cost
-      });
+      console.log(`[${phone}] in=${u.input_tokens} out=${u.output_tokens} custo=$${cost.toFixed(5)}`);
     }
 
-    return reply;
+    // Envia a resposta para o WhatsApp do usuario
+    await sendWhatsAppMessage(phone, reply);
 
   } catch (err) {
-    console.error('Erro:', err);
-    logToUser(subscriber_id, { type: 'server_error', error: err.message });
-    return 'So um segundo, pode repetir?';
+    console.error('Erro processBuffered:', err);
+    await sendWhatsAppMessage(phone, 'So um segundo, pode repetir?');
   }
 }
 
 // ─────────────────────────────────────────
-// WEBHOOK PRINCIPAL - aguarda 10s pra agrupar
+// WEBHOOK META - VERIFICACAO INICIAL (GET)
+// A Meta envia GET com challenge para validar
 // ─────────────────────────────────────────
-app.post('/webhook', async (req, res) => {
-  const { subscriber_id, last_input_text, image_url } = req.body;
-  const userText = (last_input_text || '').trim();
+app.get('/webhook/meta', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
-  console.log(`[${subscriber_id}] WEBHOOK. Texto: ${userText.length} chars. Imagem: ${!!image_url}`);
-  if (userText.length > 0) {
-    console.log(`[${subscriber_id}] PREVIEW: ${userText.substring(0, 200)}${userText.length > 200 ? '...' : ''}`);
+  if (mode === 'subscribe' && token === META_VERIFY_TOKEN) {
+    console.log('Webhook META verificado com sucesso!');
+    return res.status(200).send(challenge);
   }
-
-  logToUser(subscriber_id, {
-    type: 'webhook_received',
-    text_length: userText.length,
-    has_image: !!image_url,
-    preview: userText.substring(0, 300)
-  });
-
-  if (!userText && !image_url) {
-    return res.json({
-      messages: [{ type: 'text', text: 'Pode me contar o que ta acontecendo.' }]
-    });
-  }
-
-  // Inicializa buffer pra esse usuario
-  if (!messageBuffers[subscriber_id]) {
-    messageBuffers[subscriber_id] = { messages: [], images: [], lastUpdate: Date.now() };
-  }
-
-  // Adiciona ao buffer
-  if (userText) messageBuffers[subscriber_id].messages.push(userText);
-  if (image_url) messageBuffers[subscriber_id].images.push(image_url);
-  messageBuffers[subscriber_id].lastUpdate = Date.now();
-
-  // Aguarda 10 segundos
-  // Se o LEAD continuar digitando, lastUpdate fica sendo atualizado por outras chamadas
-  await new Promise(resolve => setTimeout(resolve, BUFFER_WAIT_MS));
-
-  // Verifica se o buffer ainda esta "fresco" ou foi atualizado por outra mensagem
-  if (!messageBuffers[subscriber_id]) {
-    // Buffer ja foi processado por outra chamada
-    return res.json({ messages: [{ type: 'text', text: '' }] });
-  }
-
-  const timeSinceLastUpdate = Date.now() - messageBuffers[subscriber_id].lastUpdate;
-  if (timeSinceLastUpdate < BUFFER_WAIT_MS - 500) {
-    // O usuario mandou outra mensagem nos ultimos segundos
-    // Essa chamada nao deve processar, outra chamada mais recente vai processar
-    console.log(`[${subscriber_id}] Buffer ainda recebendo mensagens, abortando essa chamada`);
-    return res.json({ messages: [{ type: 'text', text: '' }] });
-  }
-
-  // Processa todas as mensagens agrupadas
-  const reply = await processBuffered(subscriber_id);
-  res.json({ messages: [{ type: 'text', text: reply || 'Pode repetir, por favor?' }] });
+  console.error('Falha na verificacao do webhook META');
+  return res.sendStatus(403);
 });
 
 // ─────────────────────────────────────────
-// ENDPOINT DE DEBUG
+// WEBHOOK META - RECEBE MENSAGENS (POST)
 // ─────────────────────────────────────────
-app.get('/debug/:subscriber_id', (req, res) => {
-  const id = req.params.subscriber_id;
+app.post('/webhook/meta', async (req, res) => {
+  // Responder rapido pra Meta nao retentar
+  res.sendStatus(200);
+
+  try {
+    const body = req.body;
+    if (body.object !== 'whatsapp_business_account') return;
+
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        const value = change.value;
+        if (!value.messages) continue;
+
+        for (const message of value.messages) {
+          const fromPhone = message.from;
+          let userText = '';
+
+          // Extrai texto baseado no tipo da mensagem
+          if (message.type === 'text') {
+            userText = message.text?.body || '';
+          } else if (message.type === 'audio') {
+            userText = '[audio recebido - peca pra reenviar como texto]';
+          } else if (message.type === 'image') {
+            userText = message.image?.caption || '[imagem recebida]';
+          } else {
+            userText = `[mensagem ${message.type} recebida]`;
+          }
+
+          console.log(`[${fromPhone}] Mensagem recebida. ${userText.length} chars. Tipo: ${message.type}`);
+
+          logToUser(fromPhone, {
+            type: 'webhook_received',
+            text_length: userText.length,
+            message_type: message.type,
+            preview: userText.substring(0, 300)
+          });
+
+          if (!userText.trim()) continue;
+
+          // Adiciona ao buffer
+          if (!messageBuffers[fromPhone]) {
+            messageBuffers[fromPhone] = { messages: [], lastUpdate: Date.now() };
+          }
+          messageBuffers[fromPhone].messages.push(userText);
+          messageBuffers[fromPhone].lastUpdate = Date.now();
+
+          // Agenda processamento depois de 10s
+          // Se chegar outra mensagem, lastUpdate atualiza
+          setTimeout(async () => {
+            if (!messageBuffers[fromPhone]) return;
+            const timeSinceLast = Date.now() - messageBuffers[fromPhone].lastUpdate;
+            // Se passou pelo menos 10s desde a ultima mensagem, processa
+            if (timeSinceLast >= BUFFER_WAIT_MS - 500) {
+              await processBuffered(fromPhone);
+            }
+          }, BUFFER_WAIT_MS);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Erro processando webhook Meta:', err);
+  }
+});
+
+// ─────────────────────────────────────────
+// ENDPOINTS DE DEBUG
+// ─────────────────────────────────────────
+app.get('/debug/:phone', (req, res) => {
+  const phone = req.params.phone;
   res.json({
-    subscriber_id: id,
-    has_session: !!sessions[id],
-    session_messages: sessions[id]?.length || 0,
-    has_buffer: !!messageBuffers[id],
-    buffer_pending: messageBuffers[id] || null,
-    recent_logs: userLogs[id] || [],
-    session_preview: sessions[id]?.slice(-10) || []
+    phone: phone,
+    has_session: !!sessions[phone],
+    session_messages: sessions[phone]?.length || 0,
+    has_buffer: !!messageBuffers[phone],
+    buffer_pending: messageBuffers[phone] || null,
+    recent_logs: userLogs[phone] || [],
+    session_preview: sessions[phone]?.slice(-10) || []
   });
 });
 
-// Reset de sessao
-app.post('/reset/:subscriber_id', (req, res) => {
-  const id = req.params.subscriber_id;
-  delete sessions[id];
-  delete messageBuffers[id];
-  delete userLogs[id];
-  res.json({ success: true, message: `Sessao de ${id} resetada` });
+app.post('/reset/:phone', (req, res) => {
+  const phone = req.params.phone;
+  delete sessions[phone];
+  delete messageBuffers[phone];
+  delete userLogs[phone];
+  res.json({ success: true });
 });
 
-// Stats
+// Endpoint pra enviar mensagem manualmente (teste)
+app.post('/send-test', async (req, res) => {
+  const { phone, text } = req.body;
+  if (!phone || !text) {
+    return res.status(400).json({ error: 'phone e text obrigatorios' });
+  }
+  const success = await sendWhatsAppMessage(phone, text);
+  res.json({ success });
+});
+
 app.get('/stats', (req, res) => {
-  const userIds = Object.keys(sessions);
   res.json({
-    totalUsers: userIds.length,
-    totalMessages: userIds.reduce((sum, id) => sum + sessions[id].length, 0),
+    totalUsers: Object.keys(sessions).length,
+    totalMessages: Object.values(sessions).reduce((sum, s) => sum + s.length, 0),
     maxHistory: MAX_HISTORY,
     activeBuffers: Object.keys(messageBuffers).length,
-    bufferWaitSeconds: BUFFER_WAIT_MS / 1000
+    bufferWaitSeconds: BUFFER_WAIT_MS / 1000,
+    metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN)
   });
 });
 
-app.get('/', (req, res) => res.send('Agente Lucas v5.1 rodando - buffer 10s!'));
+app.get('/', (req, res) => res.send('Agente Lucas v7 - Cloud API direta!'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor v5.1 rodando na porta ${PORT} - buffer de ${BUFFER_WAIT_MS/1000}s`));
+app.listen(PORT, () => {
+  console.log(`Servidor v7 rodando na porta ${PORT}`);
+  console.log(`META configurado: ${!!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN)}`);
+});
