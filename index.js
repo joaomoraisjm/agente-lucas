@@ -1,11 +1,11 @@
-// Servidor Lucas Krausche v7 - WhatsApp Cloud API direta
-// Arquitetura: Railway + Meta Cloud API (sem Manychat)
+// Servidor Lucas Krausche v7.1 - Quebra em blocos automatica
+// Arquitetura: Railway + Meta Cloud API
 //
-// MUDANCAS v7:
-// - Recebe webhooks da Meta diretamente
-// - Envia mensagens via Cloud API
-// - Mantem tudo da v5.1 (buffer 10s, anti-agressividade)
-// - Validacao de webhook da Meta
+// MUDANCAS v7.1:
+// - IA gera resposta com paragrafos naturais
+// - Servidor quebra em ate 3 blocos
+// - Envia cada bloco com delay realista (simula digitacao)
+// - Mantem tudo da v7 (buffer 10s, anti-agressividade)
 
 const express = require('express');
 const app = express();
@@ -13,15 +13,14 @@ app.use(express.json({ limit: '10mb' }));
 
 // ─────────────────────────────────────────
 // CONFIGURACOES META CLOUD API
-// (variaveis de ambiente do Railway)
 // ─────────────────────────────────────────
-const META_TOKEN = process.env.META_TOKEN;              // Token de acesso
-const META_PHONE_ID = process.env.META_PHONE_ID;        // Phone Number ID
-const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN; // Token criado por voce para validar webhook
+const META_TOKEN = process.env.META_TOKEN;
+const META_PHONE_ID = process.env.META_PHONE_ID;
+const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 const META_API_VERSION = 'v22.0';
 
 // ─────────────────────────────────────────
-// SYSTEM PROMPT (mesmo da v5.1)
+// SYSTEM PROMPT v7.1 - Otimizado para quebra em blocos
 // ─────────────────────────────────────────
 const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos masculinos. Voce ja atendeu centenas de homens em momentos de termino, traicao, crises de relacionamento e reconstrucao emocional.
 
@@ -41,17 +40,39 @@ REGRAS ABSOLUTAS DE COMPORTAMENTO (NUNCA VIOLE)
 3. SE VOCE NAO ENTENDEU OU NAO RECEBEU ALGO, A FALHA E SUA.
    Assume a falha tecnica e pede gentilmente para reenviar.
    NUNCA culpe o usuario.
-   Exemplos: "Desculpa, sua mensagem nao chegou completa. Pode reenviar?"
 
 4. SE O USUARIO TE CORRIGIR, VOCE RECONHECE E AGRADECE.
 
 5. VOCE NUNCA REPETE O QUE JA DISSE SE O USUARIO RECLAMOU.
 
 ═══════════════════════════════════════════
+FORMATO DE RESPOSTA (CRITICO)
+═══════════════════════════════════════════
+
+Voce SEMPRE estrutura sua resposta em 1 a 3 paragrafos curtos, separados por linha em branco.
+
+Cada paragrafo deve ter de 1 a 3 frases curtas.
+Cada paragrafo aborda UM aspecto especifico:
+- Paragrafo 1: validacao do sentimento ou reconhecimento da situacao
+- Paragrafo 2: diagnostico ou orientacao especifica
+- Paragrafo 3: pergunta para avancar OU script pratico (se aplicavel)
+
+Exemplo CORRETO:
+"Po, cara, imagino o quanto isso ta pesando.
+
+Olha, o que voce ta sentindo agora e normal. Acontece com todo cara que perde alguem importante.
+
+Me conta: voces se falaram quando pela ultima vez?"
+
+NUNCA use mais de 3 paragrafos.
+NUNCA escreva um paragrafo que pareca um textao.
+SEMPRE separe paragrafos com linha em branco.
+
+═══════════════════════════════════════════
 ESTILO
 ═══════════════════════════════════════════
 
-Mensagens curtas, ritmo de audio escrito no WhatsApp, max 8 linhas.
+Mensagens curtas, ritmo de audio escrito no WhatsApp.
 Tom humano, direto, firme e acolhedor.
 Max 1 emoji por mensagem, so quando natural.
 Expressoes coloquiais brasileiras (po, irmao, mano, cara).
@@ -65,20 +86,14 @@ Em 100% das respostas com emocao, VALIDE o sentimento ANTES de orientar.
 PRINCIPIO 2 - AUTORIDADE COM RESPEITO
 Conselheiro, nao bajulador. NUNCA agressivo, sarcastico ou debochado.
 
-PRINCIPIO 3 - ESTRUTURA
-1. Validacao curta do sentimento.
-2. Diagnostico do que acontece.
-3. Orientacao especifica aplicavel agora.
-4. Pergunta para avancar OU script pratico.
-
-PRINCIPIO 4 - MENSAGENS LONGAS
+PRINCIPIO 3 - MENSAGENS LONGAS
 Quando texto >300 chars:
-1. CONFIRMA recebimento: "Recebi o texto, vou ler com atencao agora."
-2. ANALISA conteudo.
-3. DA orientacao especifica.
+1. CONFIRMA recebimento no primeiro paragrafo.
+2. ANALISA conteudo no segundo paragrafo.
+3. DA orientacao no terceiro paragrafo.
 NUNCA peca pra reenviar mensagem ja recebida.
 
-PRINCIPIO 5 - ANTI-REPETICAO
+PRINCIPIO 4 - ANTI-REPETICAO
 JAMAIS repete resposta ja enviada. Cada mensagem AVANCA a conversa.
 
 ═══════════════════════════════════════════
@@ -114,11 +129,9 @@ function smartTruncate(history) {
   return [...history.slice(0, PRESERVE_INITIAL), ...history.slice(-(MAX_HISTORY - PRESERVE_INITIAL))];
 }
 
-// Buffer de 10 segundos
 const messageBuffers = {};
 const BUFFER_WAIT_MS = 10000;
 
-// Logs detalhados
 const userLogs = {};
 function logToUser(phone, entry) {
   if (!userLogs[phone]) userLogs[phone] = [];
@@ -127,7 +140,48 @@ function logToUser(phone, entry) {
 }
 
 // ─────────────────────────────────────────
-// FUNCAO: ENVIAR MENSAGEM VIA META CLOUD API
+// QUEBRAR RESPOSTA EM BLOCOS NATURAIS
+// ─────────────────────────────────────────
+function splitIntoBlocks(text) {
+  // Divide por linhas em branco (paragrafos)
+  let blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(b => b.length > 0);
+
+  // Se vier sem quebras, tenta dividir por pontuacao + maiuscula
+  if (blocks.length === 1 && text.length > 200) {
+    const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+    if (sentences.length >= 2) {
+      const mid = Math.ceil(sentences.length / 2);
+      blocks = [
+        sentences.slice(0, mid).join(' ').trim(),
+        sentences.slice(mid).join(' ').trim()
+      ].filter(b => b.length > 0);
+    }
+  }
+
+  // Limita a 3 blocos. Se tiver mais, junta os ultimos
+  if (blocks.length > 3) {
+    const lastBlocks = blocks.slice(2).join('\n\n');
+    blocks = [blocks[0], blocks[1], lastBlocks];
+  }
+
+  return blocks;
+}
+
+// Calcula delay realista baseado no tamanho do bloco
+function calculateTypingDelay(text) {
+  // Velocidade media de digitacao: ~40 caracteres por segundo
+  // Adiciona 800ms de "pensamento" antes
+  const charsPerSecond = 40;
+  const thinkingTime = 800;
+  const typingTime = (text.length / charsPerSecond) * 1000;
+
+  // Minimo 1.5s, maximo 5s
+  const totalDelay = Math.min(Math.max(typingTime + thinkingTime, 1500), 5000);
+  return Math.round(totalDelay);
+}
+
+// ─────────────────────────────────────────
+// FUNCAO: ENVIAR MENSAGEM VIA META
 // ─────────────────────────────────────────
 async function sendWhatsAppMessage(toPhone, text) {
   try {
@@ -153,7 +207,6 @@ async function sendWhatsAppMessage(toPhone, text) {
       console.error(`Erro enviando para ${toPhone}:`, data.error);
       return false;
     }
-    console.log(`[${toPhone}] Mensagem enviada com sucesso. ID: ${data.messages?.[0]?.id}`);
     return true;
   } catch (err) {
     console.error('Erro sendWhatsAppMessage:', err);
@@ -161,8 +214,32 @@ async function sendWhatsAppMessage(toPhone, text) {
   }
 }
 
+// Envia varios blocos com delay realista entre eles
+async function sendBlocksWithDelay(toPhone, blocks) {
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+
+    // Calcula e aguarda delay (exceto antes do primeiro bloco)
+    if (i > 0) {
+      const delay = calculateTypingDelay(block);
+      console.log(`[${toPhone}] Aguardando ${delay}ms antes do bloco ${i + 1}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    } else {
+      // Pequeno delay antes do primeiro bloco
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+
+    const success = await sendWhatsAppMessage(toPhone, block);
+    if (!success) {
+      console.error(`[${toPhone}] Falha ao enviar bloco ${i + 1}`);
+      break;
+    }
+    console.log(`[${toPhone}] Bloco ${i + 1}/${blocks.length} enviado (${block.length} chars)`);
+  }
+}
+
 // ─────────────────────────────────────────
-// PROCESSAMENTO DA MENSAGEM AGRUPADA
+// PROCESSAMENTO
 // ─────────────────────────────────────────
 async function processBuffered(phone) {
   const buffer = messageBuffers[phone];
@@ -204,7 +281,7 @@ async function processBuffered(phone) {
 
     if (data.error) {
       console.error('Erro Claude API:', data.error);
-      await sendWhatsAppMessage(phone, 'Po, deu um problema tecnico aqui. Pode reenviar a mensagem?');
+      await sendWhatsAppMessage(phone, 'Po, deu um problema tecnico aqui. Pode reenviar?');
       return;
     }
 
@@ -219,8 +296,18 @@ async function processBuffered(phone) {
       console.log(`[${phone}] in=${u.input_tokens} out=${u.output_tokens} custo=$${cost.toFixed(5)}`);
     }
 
-    // Envia a resposta para o WhatsApp do usuario
-    await sendWhatsAppMessage(phone, reply);
+    // QUEBRA E ENVIA EM BLOCOS
+    const blocks = splitIntoBlocks(reply);
+    console.log(`[${phone}] Resposta quebrada em ${blocks.length} bloco(s)`);
+
+    logToUser(phone, {
+      type: 'response',
+      blocks_count: blocks.length,
+      total_chars: reply.length,
+      preview: reply.substring(0, 200)
+    });
+
+    await sendBlocksWithDelay(phone, blocks);
 
   } catch (err) {
     console.error('Erro processBuffered:', err);
@@ -229,8 +316,7 @@ async function processBuffered(phone) {
 }
 
 // ─────────────────────────────────────────
-// WEBHOOK META - VERIFICACAO INICIAL (GET)
-// A Meta envia GET com challenge para validar
+// WEBHOOK META - GET (verificacao)
 // ─────────────────────────────────────────
 app.get('/webhook/meta', (req, res) => {
   const mode = req.query['hub.mode'];
@@ -238,18 +324,16 @@ app.get('/webhook/meta', (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === META_VERIFY_TOKEN) {
-    console.log('Webhook META verificado com sucesso!');
+    console.log('Webhook META verificado!');
     return res.status(200).send(challenge);
   }
-  console.error('Falha na verificacao do webhook META');
   return res.sendStatus(403);
 });
 
 // ─────────────────────────────────────────
-// WEBHOOK META - RECEBE MENSAGENS (POST)
+// WEBHOOK META - POST (mensagens)
 // ─────────────────────────────────────────
 app.post('/webhook/meta', async (req, res) => {
-  // Responder rapido pra Meta nao retentar
   res.sendStatus(200);
 
   try {
@@ -265,7 +349,6 @@ app.post('/webhook/meta', async (req, res) => {
           const fromPhone = message.from;
           let userText = '';
 
-          // Extrai texto baseado no tipo da mensagem
           if (message.type === 'text') {
             userText = message.text?.body || '';
           } else if (message.type === 'audio') {
@@ -276,7 +359,7 @@ app.post('/webhook/meta', async (req, res) => {
             userText = `[mensagem ${message.type} recebida]`;
           }
 
-          console.log(`[${fromPhone}] Mensagem recebida. ${userText.length} chars. Tipo: ${message.type}`);
+          console.log(`[${fromPhone}] Recebido: ${userText.length} chars`);
 
           logToUser(fromPhone, {
             type: 'webhook_received',
@@ -287,19 +370,15 @@ app.post('/webhook/meta', async (req, res) => {
 
           if (!userText.trim()) continue;
 
-          // Adiciona ao buffer
           if (!messageBuffers[fromPhone]) {
             messageBuffers[fromPhone] = { messages: [], lastUpdate: Date.now() };
           }
           messageBuffers[fromPhone].messages.push(userText);
           messageBuffers[fromPhone].lastUpdate = Date.now();
 
-          // Agenda processamento depois de 10s
-          // Se chegar outra mensagem, lastUpdate atualiza
           setTimeout(async () => {
             if (!messageBuffers[fromPhone]) return;
             const timeSinceLast = Date.now() - messageBuffers[fromPhone].lastUpdate;
-            // Se passou pelo menos 10s desde a ultima mensagem, processa
             if (timeSinceLast >= BUFFER_WAIT_MS - 500) {
               await processBuffered(fromPhone);
             }
@@ -308,7 +387,7 @@ app.post('/webhook/meta', async (req, res) => {
       }
     }
   } catch (err) {
-    console.error('Erro processando webhook Meta:', err);
+    console.error('Erro webhook Meta:', err);
   }
 });
 
@@ -336,7 +415,6 @@ app.post('/reset/:phone', (req, res) => {
   res.json({ success: true });
 });
 
-// Endpoint pra enviar mensagem manualmente (teste)
 app.post('/send-test', async (req, res) => {
   const { phone, text } = req.body;
   if (!phone || !text) {
@@ -348,19 +426,21 @@ app.post('/send-test', async (req, res) => {
 
 app.get('/stats', (req, res) => {
   res.json({
+    version: '7.1',
     totalUsers: Object.keys(sessions).length,
     totalMessages: Object.values(sessions).reduce((sum, s) => sum + s.length, 0),
     maxHistory: MAX_HISTORY,
     activeBuffers: Object.keys(messageBuffers).length,
     bufferWaitSeconds: BUFFER_WAIT_MS / 1000,
-    metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN)
+    metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN),
+    blockSplitting: true
   });
 });
 
-app.get('/', (req, res) => res.send('Agente Lucas v7 - Cloud API direta!'));
+app.get('/', (req, res) => res.send('Agente Lucas v7.1 - Quebra em blocos ativa!'));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor v7 rodando na porta ${PORT}`);
+  console.log(`Servidor v7.1 rodando na porta ${PORT}`);
   console.log(`META configurado: ${!!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN)}`);
 });
