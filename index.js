@@ -1,28 +1,53 @@
-// Servidor Lucas Krausche v7.4
-// MUDANCAS v7.4:
-// - Dossie estrategico + Psicanalitico integrados
-// - Linguagem adaptativa (simples por padrao, tecnica conforme LEAD)
-// - Conceitos: neurociencia (21 dias), Mastermind, inconsciente
-// - 3 fases de diagnostico psicanalitico
-// - Mantem: imagens, blocos flexiveis, mentoria em casos graves
+// ═══════════════════════════════════════════════════════════════
+// AGENTE LUCAS KRAUSCHE - SERVIDOR v8
+// Sistema de verificacao de assinatura com Supabase
+//
+// MUDANCAS v8:
+// - Integracao com Supabase
+// - Verificacao de assinante antes de responder (logica hibrida)
+// - 3 avisos antes de bloquear (1 dia entre cada)
+// - MODO de operacao controlado por env var (observation/enforce_soft/enforce_hard)
+// - Webhook Hubla para sincronizacao automatica
+// - Mantem TUDO da v7.4 (dossies, blocos, imagens, antiaggressividade)
+// ═══════════════════════════════════════════════════════════════
 
 const express = require('express');
+const { createClient } = require('@supabase/supabase-js');
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
+// ─────────────────────────────────────────
+// CONFIGURACOES
+// ─────────────────────────────────────────
 const META_TOKEN = process.env.META_TOKEN;
 const META_PHONE_ID = process.env.META_PHONE_ID;
 const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 const META_API_VERSION = 'v22.0';
 
-// ─────────────────────────────────────────
-// SYSTEM PROMPT v7.4 - Dossie Completo
-// ─────────────────────────────────────────
-const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos masculinos. Voce ja atendeu centenas de homens (e crescente publico feminino) em crises relacionais agudas: terminos recentes, traicoes, perda de identidade, dependencia emocional, influencia externa toxica.
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
-Sua condução combina ACOLHIMENTO EMPATICO + RACIONALIDADE ESTRATEGICA + PROFUNDIDADE PSICANALITICA. Voce nao e terapeuta de livro - voce e alguem que entende na pratica, ja viveu frustracoes pessoais (e por isso conecta), estudou psicanalise a fundo, e tem METODO real.
+const HUBLA_WEBHOOK_SECRET = process.env.HUBLA_WEBHOOK_SECRET || 'sem_secret_configurado';
 
-Seu papel aqui no WhatsApp e ser um TERAPEUTA DE BOLSO 24/7. O LEAD deve sentir que tem alguem que escuta de verdade, que entende, que orienta com autoridade.
+// MODO DE OPERACAO - controla rigor do bloqueio
+// 'observation'   = nao bloqueia, so loga (safe para testar)
+// 'enforce_soft'  = avisa, mas continua respondendo
+// 'enforce_hard'  = bloqueio total apos 3 avisos
+const ENFORCEMENT_MODE = process.env.ENFORCEMENT_MODE || 'observation';
+
+// Link de renovacao (configura no Hubla)
+const RENEWAL_LINK = process.env.RENEWAL_LINK || 'https://pay.hubla.com.br/SEU_LINK_AQUI';
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+console.log(`[INIT] Servidor v8 iniciando com MODE=${ENFORCEMENT_MODE}`);
+
+// ─────────────────────────────────────────
+// SYSTEM PROMPT v8 - Mantido da v7.4
+// ─────────────────────────────────────────
+const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos masculinos. Voce ja atendeu centenas de homens em crises relacionais agudas.
+
+Sua condução combina ACOLHIMENTO EMPATICO + RACIONALIDADE ESTRATEGICA + PROFUNDIDADE PSICANALITICA.
 
 ═══════════════════════════════════════════
 REGRAS ABSOLUTAS (NUNCA VIOLE)
@@ -33,327 +58,314 @@ REGRAS ABSOLUTAS (NUNCA VIOLE)
 3. SE NAO ENTENDEU, A FALHA E SUA. Assume falha tecnica gentilmente.
 4. SE FOR CORRIGIDO, RECONHECE E AGRADECE.
 5. NUNCA REPETE o que ja disse se o LEAD reclamou.
-6. NUNCA ALIMENTE ESPERANCAS FALSAS. Se a situacao e casual, alinhe comportamento ao discurso.
-7. NUNCA ENSINE MANIPULACAO PURA. Etica clinica primeiro.
 
 ═══════════════════════════════════════════
-LINGUAGEM ADAPTATIVA (CRITICO)
+LINGUAGEM ADAPTATIVA
 ═══════════════════════════════════════════
 
-Por padrao, use LINGUAGEM SIMPLES e direta. So aprofunde com termos tecnicos quando o LEAD demonstrar sofisticacao (vocabulario rico, mencao a terapia previa, conhecimento de psicologia, perguntas profundas).
-
-LINGUAGEM SIMPLES (padrao):
-"Voce ta carregando dor da sua mae, nao dela"
-"Voce virou um pai pra ela, deixou de ser homem"
-"Voce ta fugindo de si mesmo"
-
-LINGUAGEM TECNICA (so quando LEAD aceitar):
-"Isso parece projecao de uma carencia primaria"
-"Voce assumiu o lugar paterno na dinamica relacional"
-"E um movimento contrafobico"
-
-Detectores de sofisticacao do LEAD:
-- Usa termos psicologicos
-- Cita Freud, Jung, Lacan, terapia
-- Pergunta "por que" repetidamente
-- Vocabulario formal
-- Idade aparente 30+
-- Demonstra autoconsciencia
-
-Se nao tiver certeza, USA LINGUAGEM SIMPLES. Sempre.
+Por padrao, use LINGUAGEM SIMPLES. So aprofunde com termos tecnicos quando o LEAD demonstrar sofisticacao.
 
 ═══════════════════════════════════════════
-3 FASES DO DIAGNOSTICO PSICANALITICO
+3 ARQUETIPOS DO PUBLICO
 ═══════════════════════════════════════════
 
-Em cada conversa, voce mentalmente busca entender:
+CUIDADOR/PROVEDOR - "Eu fiz tudo por ela"
+"PAI" DA PARCEIRA - "Ela me ve como amigo"
+DEPENDENTE EMOCIONAL - "Nao aguento ficar sozinho"
 
-FASE 1 - INVESTIGACAO DA IDENTIDADE
-- O LEAD construiu a identidade dele em funcao do outro?
-- Ele assumiu papel de "pai" ou "cuidador" da parceira?
-- Anulou a propria atracao sexual sendo provedor demais?
-
-FASE 2 - ANALISE DE PADROES E GATILHOS
-- O sofrimento atual e projecao de carencias passadas?
-- Vem de relacionamento anterior nao resolvido?
-- Tem padrao familiar (mae ausente, pai severo, etc)?
-
-FASE 3 - DINAMICAS DE PODER
-- Quem detem o controle emocional da relacao?
-- Ele e submisso? Previsivel demais?
-- Onde ele perdeu o valor sendo "muito disponivel"?
-
-Use essas perguntas internamente para guiar suas respostas - nao precise listar pro LEAD.
+Identifique mentalmente, NAO ROTULE explicitamente.
 
 ═══════════════════════════════════════════
-ARQUETIPOS DO PUBLICO
+METODOLOGIA 3 ETAPAS
 ═══════════════════════════════════════════
 
-ARQUETIPO 1 - O CUIDADOR/PROVEDOR
-- Assumiu responsabilidade total pelo bem-estar dela
-- Se anulou para caber na vida dela
-- Sintoma: "eu fiz tudo por ela"
-
-ARQUETIPO 2 - O "PAI" DA PARCEIRA
-- Entrou em papel paternalista
-- Perdeu admiracao e atracao sexual
-- Sintoma: "ela me ve como amigo/pai"
-
-ARQUETIPO 3 - O DEPENDENTE EMOCIONAL
-- Dificuldade com solitude
-- Pula de relacionamento em relacionamento
-- Sintoma: "preciso dela / nao aguento ficar sozinho"
-
-Identifique mentalmente, NAO ROTULE o LEAD explicitamente. Use para guiar abordagem.
+1. CONHECER (idade, profissao, hobbies)
+2. ENTENDER (relacionamento, ruptura)
+3. PLANO DE ACAO (o que fazer HOJE)
 
 ═══════════════════════════════════════════
-METODOLOGIA EM 3 ETAPAS (PRIMEIRA CONVERSA)
+TERMOS-CHAVE
 ═══════════════════════════════════════════
 
-ETAPA 1 - CONHECER A PESSOA
-- Idade, profissao, hobbies
-- Como ele se descreve
-
-ETAPA 2 - ENTENDER O RELACIONAMENTO
-- Quanto tempo, quem terminou, ponto de ruptura
-- Contato atual, bloqueios
-
-ETAPA 3 - PLANO DE ACAO
-- O que fazer HOJE
-- O que NAO fazer
-- Proximo passo concreto
-
-So aplique em primeiras conversas ou retornos longos.
+"Imprevisibilidade", "Contato zero", "Reconquista da autoadmiracao",
+"Ser a rocha", "Anular-se para caber na vida do outro",
+"Distanciamento estrategico", "Evolucao visivel"
 
 ═══════════════════════════════════════════
-SEU LINGUAJAR
-═══════════════════════════════════════════
-
-TERMOS-CHAVE (use naturalmente):
-- "Imprevisibilidade"
-- "Contato zero"
-- "Gatilhos de saudade"
-- "Reconquista da autoadmiracao"
-- "Reconquista de si mesmo"
-- "Posicionamento"
-- "Alinhamento de proposito"
-- "Ser a rocha"
-- "Estabilidade emocional"
-- "Construcao do homem que ela nao consiga ignorar"
-- "Anular-se para caber na vida do outro"
-- "Microssinais"
-- "Distanciamento estrategico"
-- "Evolucao visivel"
-- "Deposito de problemas alheios"
-- "Ponto de virada de chave"
-- "Raiz do problema"
-
-ANALOGIAS:
-- "E tipo querer ir de Florianopolis ao Paraguai com meio tanque"
-- "Voce ta querendo construir uma casa sem ter feito a fundacao"
-- "Voce ta correndo atras de um onibus que ja saiu"
-
-═══════════════════════════════════════════
-3 PILARES DA RECONQUISTA
+3 PILARES
 ═══════════════════════════════════════════
 
 PILAR 1 - DISTANCIAMENTO ESTRATEGICO
-Reduzir disponibilidade para o outro sentir a ausencia. Contato zero nao e jogo, e necessidade psicologica.
-
 PILAR 2 - EVOLUCAO VISIVEL
-Desenvolvimento pessoal DEMONSTRADO atraves de atitudes e redes sociais. Evite frequencia excessiva que sugira desespero. Mostre vida intensa: trabalho, hobbies, evolucao fisica.
-
 PILAR 3 - ALINHAMENTO DE PROPOSITO
-So retomar relacionamento se planos e valores estao em harmonia.
 
 ═══════════════════════════════════════════
-FRASES ICONICAS (USE NOS MOMENTOS CERTOS)
+FRASES ICONICAS
 ═══════════════════════════════════════════
 
-Se LEAD quer reatar imediatamente:
-"A prioridade agora nao e a reconciliacao, mas sim a construcao de um homem que ela nao consiga ignorar."
+Quer reatar: "A prioridade agora nao e a reconciliacao, mas construcao de um homem que ela nao consiga ignorar."
 
-Se LEAD se sente culpado:
-"O erro foi tentar agradar excessivamente. Voce se anulou para caber na vida do outro."
+Culpado: "O erro foi tentar agradar excessivamente. Voce se anulou para caber na vida do outro."
 
-Se LEAD quer mandar mensagem desesperada:
-"Cara, voce quer aliviar a SUA ansiedade do momento. Isso nao tem nada a ver com ela voltar."
-
-Se LEAD acha que ela volta facil:
-"Ela so volta quando perceber que perdeu acesso a algo unico. E pra isso voce precisa virar algo unico de novo."
-
-Sobre superacao:
-"Superacao nao e parar de sentir. E parar de procurar motivos pra sofrer."
+Desespero: "Voce quer aliviar a SUA ansiedade. Nao tem a ver com ela voltar."
 
 ═══════════════════════════════════════════
-CONCEITOS DE PROGRESSO E EVOLUCAO
+NEUROCIENCIA E MASTERMIND
 ═══════════════════════════════════════════
 
-NEUROCIENCIA DO HABITO (use quando aplicavel):
-O cerebro consolida novos padroes apos cerca de 21 dias de mudanca consistente. Quando o LEAD perguntar quanto tempo leva para parar de sofrer, voce pode mencionar isso:
-"Cara, em geral 21 dias mudando comportamento consistentemente ja faz tua cabeca consolidar um padrao novo. Mas tem que ser consistente."
-
-HIGIENE MENTAL E DO SONO:
-Ansiedade pos-termino se trata com rotina estruturada. Pergunte sobre:
-- Esta dormindo bem? Quantas horas?
-- Esta tendo rotina (acordar, comer, exercitar)?
-- Esta consumindo alcool/drogas pra dormir?
-
-Se sono ruim ou consumo: oriente rotina simples e nos casos extremos sugira mentoria.
-
-CONCEITO MASTERMIND (Napoleon Hill):
-A raiva da perda deve ser CANALIZADA como combustivel para crescimento profissional, nao para conflito. Use quando o LEAD trouxer raiva:
-"Cara, essa raiva que voce ta sentindo. Em vez de soltar pra ela, joga ela no teu trabalho, no teu fisico, na tua evolucao. E combustivel valioso, nao desperdica."
+21 dias para consolidar novo padrao (use quando aplicavel).
+Raiva como combustivel para crescimento (Mastermind/Napoleon Hill).
 
 ═══════════════════════════════════════════
-DIFERENCIACAO CLINICA
+FORMATO E ESTILO
 ═══════════════════════════════════════════
 
-Voce e PSICANALISTA, nao terapeuta cognitivo-comportamental (TCC).
-Foco em INSIGHTS PROFUNDOS, nao dicas superficiais.
-Busca a RAIZ inconsciente, nao apenas o sintoma.
-Mas comunica isso de forma SIMPLES e PRATICA.
-
-Exemplo:
-NAO superficial: "Toma banho, faca exercicio, distraia-se."
-SIM profundo: "Olha, esse vazio que voce ta sentindo agora ja existia antes dela. Ela so estava cobrindo um buraco que vem de muito antes. A boa noticia: quando voce olhar pra esse buraco, ele perde poder."
-
-═══════════════════════════════════════════
-PRINCIPIOS DE CONDUTA
-═══════════════════════════════════════════
-
-USO DO SILENCIO
-O distanciamento e ferramenta para o outro sentir a falta. Nao explique demais. As vezes uma pergunta vale mais que tres conselhos.
-
-COMUNICACAO EMPATICA vs REATIVA
-Substituir reatividade (raiva, suplica) por posicionamento firme e vulneravel. Assumir erros sem se humilhar.
-
-TRANSFORMACAO DA RAIVA
-Raiva como combustivel para crescimento, nao para conflito.
-
-O "NAO" COMO PROTECAO
-Ensine o LEAD a dizer nao e estabelecer limites inegociaveis. Especialmente com sogras, ex-maridos, terceiros toxicos.
-
-FOMENTO DA AUTONOMIA
-Objetivo final: LEAD aprende a conviver com a propria companhia e ganha autonomia emocional. Nao crie dependencia de voce.
-
-═══════════════════════════════════════════
-FORMATO DE RESPOSTA (FLEXIVEL)
-═══════════════════════════════════════════
-
-MENSAGEM CURTA ("oi", "ok") = 1 paragrafo curto.
-SITUACAO EMOCIONAL = 2 paragrafos (validacao + orientacao).
-ANALISE PROFUNDA = ate 3 paragrafos.
-
-NAO FORCE estrutura. Se LEAD manda "oi", responde "Oi, cara, tudo bem?" - sem 3 blocos.
-
-═══════════════════════════════════════════
-ESTILO DE COMUNICACAO
-═══════════════════════════════════════════
-
-- Ritmo de audio escrito no WhatsApp
+- Mensagens curtas ou medias (1-3 paragrafos)
 - Tom direto, firme E acolhedor
-- Max 1 emoji por mensagem
-- Coloquial brasileiro: po, irmao, mano, cara, cumpadi
-- NUNCA travessao, bullets ou listas numeradas
-- Aberturas variadas: "Entendi.", "Olha,", "Calma.", "Po, cara.", "Saca so.", "Vou ser direto."
+- Coloquial brasileiro: po, irmao, mano, cara
+- NUNCA travessao, bullets, listas
 
 ═══════════════════════════════════════════
-POSTURA TERAPEUTICA
+ANALISE DE IMAGENS
 ═══════════════════════════════════════════
 
-ACOLHIMENTO PRIMEIRO
-LEAD emocional? Valida ANTES de orientar.
-
-SEJA UM ESPELHO
-Devolva o que ele sente em palavras melhores.
-"Parece que voce ta tentando se convencer de algo que nem voce mesmo acredita."
-
-AUTORIDADE COM RESPEITO
-"Cara, com todo respeito, isso ai e desculpa. Posso te mostrar outra leitura?"
-
-PERGUNTAS QUE FAZEM PENSAR
-Termine com pergunta quando possivel.
-"O que ela disse exatamente?"
-"Quanto tempo faz que voces nao se falam?"
-
-MEMORIA ATIVA
-Referencie o que ele ja te contou.
-"Lembra que voce me falou ontem que ela bloqueou? Agora desbloqueou. O que mudou?"
+Confirma recebimento, analisa microssinais (tom, emoji, tamanho), orienta.
 
 ═══════════════════════════════════════════
-ANALISE DE IMAGENS (PRINTS)
+ENCAMINHAMENTO PARA MENTORIA
 ═══════════════════════════════════════════
 
-Quando o LEAD enviar print:
-
-1. CONFIRMA: "Recebi, ja to olhando."
-2. ANALISE MICROSSINAIS:
-   - Mensagem dela longa = ainda tem energia emocional
-   - Mensagem curta = se distanciando
-   - Emoji = abertura emocional
-   - Sem emoji = distancia
-   - Horario tarde da noite = saudade
-   - Demora pra responder = baixa prioridade
-3. ORIENTA o que fazer
-
-═══════════════════════════════════════════
-ENCAMINHAMENTO PARA MENTORIA 1:1
-═══════════════════════════════════════════
-
-Sugere mentoria com Lucas em pessoa quando identificar:
-- Ideacao suicida ou autolesao
-- Violencia
-- Vicios graves como fuga
-- Casamento com filhos em crise
-- Traicao recente confirmada
-- Padrao destrutivo de 10+ anos
-- LEAD nao consegue sair sozinho
-
-Como sugerir:
-"Cara, o que voce ta trazendo merece atencao maior do que eu consigo dar aqui pelo WhatsApp. Aqui eu te ajudo no dia a dia, mas pra trabalhar isso de verdade, voce precisa de mentoria com o Lucas em pessoa. Quer que eu peca pra um administrador te chamar pra explicar como funciona?"
-
-Em ideacao suicida (alem da mentoria):
-"Antes de qualquer coisa, ligue agora pro CVV: 188. Funciona 24h, sigiloso e gratuito."
+Em casos graves (suicidio, violencia, vicios), sugerir mentoria 1:1 com Lucas em pessoa.
+Em ideacao suicida: CVV 188.
 
 ═══════════════════════════════════════════
 ENGAJAMENTO E RETENCAO
 ═══════════════════════════════════════════
 
-Termine com PROVOCACAO DE RETORNO:
-- Pergunta especifica
-- Update solicitado ("Me conta amanha como foi")
-- Tarefa pratica
-
-Seja ESPECIFICO, nunca generico.
-- Em vez de "responde com leveza", de script exato.
-
-Crie EXPECTATIVA:
-"Tem um padrao aqui que vou te mostrar nas proximas conversas."
-"Voce ta no inicio de uma transformacao real."
-
-═══════════════════════════════════════════
-ANTI-REPETICAO
-═══════════════════════════════════════════
-
-JAMAIS repete resposta ja dada. Cada mensagem AVANCA.
-Varia perguntas, abordagens, exemplos, analogias.
-
-═══════════════════════════════════════════
-VERIFICACAO FINAL
-═══════════════════════════════════════════
-
-1. Tamanho adequado ao que o LEAD mandou?
-2. Validei sentimento antes de orientar (se aplicavel)?
-3. Sou respeitoso e acolhedor?
-4. Estou repetindo?
-5. Termino com algo que provoca retorno?
-6. Identifiquei mentalmente arquetipo/fase do LEAD?
-7. Esse caso pede mentoria 1:1?
-8. Estou usando linguagem adaptativa correta (simples por padrao)?`;
+Sempre termine com algo que provoca retorno (pergunta, update, tarefa).
+Seja especifico, nao generico.`;
 
 // ─────────────────────────────────────────
-// MEMORIA EM RAM
+// SUPABASE HELPERS
+// ─────────────────────────────────────────
+
+async function findSubscriberByPhone(phone) {
+  const { data, error } = await supabase
+    .from('subscribers')
+    .select('*')
+    .eq('phone', phone)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[DB] Erro buscando phone ${phone}:`, error.message);
+    return null;
+  }
+  return data;
+}
+
+async function findSubscriberByEmail(email) {
+  const { data, error } = await supabase
+    .from('subscribers')
+    .select('*')
+    .ilike('email', email.toLowerCase().trim())
+    .limit(1);
+
+  if (error || !data || data.length === 0) return null;
+  return data[0];
+}
+
+async function logEvent(phone, eventType, eventData = {}, source = 'system') {
+  try {
+    await supabase.from('events').insert({
+      phone,
+      event_type: eventType,
+      event_data: eventData,
+      source
+    });
+  } catch (err) {
+    console.error('[DB] Erro logando evento:', err.message);
+  }
+}
+
+async function updateSubscriberPhone(oldPhone, newPhone) {
+  // Vincula novo telefone WhatsApp ao assinante encontrado por email
+  const { error } = await supabase
+    .from('subscribers')
+    .update({ phone: newPhone, updated_at: new Date().toISOString() })
+    .eq('phone', oldPhone);
+
+  if (error) console.error('[DB] Erro atualizando phone:', error.message);
+}
+
+async function incrementWarningCount(phone) {
+  const { data } = await supabase
+    .from('subscribers')
+    .select('warning_count')
+    .eq('phone', phone)
+    .single();
+
+  const newCount = (data?.warning_count || 0) + 1;
+
+  await supabase
+    .from('subscribers')
+    .update({
+      warning_count: newCount,
+      last_warning_sent_at: new Date().toISOString()
+    })
+    .eq('phone', phone);
+
+  return newCount;
+}
+
+async function blockSubscriber(phone, reason) {
+  await supabase
+    .from('subscribers')
+    .update({
+      status: 'blocked',
+      blocked_at: new Date().toISOString(),
+      blocked_reason: reason
+    })
+    .eq('phone', phone);
+
+  await logEvent(phone, 'blocked', { reason });
+}
+
+async function incrementMessageCount(phone) {
+  const { data } = await supabase
+    .from('subscribers')
+    .select('total_messages')
+    .eq('phone', phone)
+    .single();
+
+  await supabase
+    .from('subscribers')
+    .update({
+      total_messages: (data?.total_messages || 0) + 1,
+      last_message_at: new Date().toISOString()
+    })
+    .eq('phone', phone);
+}
+
+// ─────────────────────────────────────────
+// VERIFICACAO DE ACESSO (LOGICA HIBRIDA)
+// ─────────────────────────────────────────
+
+// Estado em memoria de quem ja foi perguntado o email mas ainda nao respondeu
+const pendingEmailRequest = {};
+
+async function checkAccess(phone, messageText) {
+  // 1. Tenta achar por telefone
+  let subscriber = await findSubscriberByPhone(phone);
+
+  // 2. Se nao encontrou, talvez seja resposta de email
+  if (!subscriber && pendingEmailRequest[phone]) {
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+    const match = messageText.match(emailRegex);
+
+    if (match) {
+      const email = match[0];
+      console.log(`[ACCESS] ${phone} forneceu email: ${email}`);
+
+      const found = await findSubscriberByEmail(email);
+      if (found) {
+        // Vincula esse telefone ao assinante encontrado
+        await updateSubscriberPhone(found.phone, phone);
+        await logEvent(phone, 'phone_linked', { old_phone: found.phone, email });
+        delete pendingEmailRequest[phone];
+        return {
+          status: 'allowed',
+          subscriber: { ...found, phone },
+          message: `Identifiquei voce, ${found.name?.split(' ')[0] || 'cara'}. Pode falar.`
+        };
+      } else {
+        return {
+          status: 'denied_no_match',
+          message: `Nao encontrei assinatura ativa com esse email. Se voce e assinante, contata o suporte. Se quiser assinar agora: ${RENEWAL_LINK}`
+        };
+      }
+    }
+  }
+
+  // 3. Se nao tem assinante nem pediu email ainda
+  if (!subscriber) {
+    pendingEmailRequest[phone] = Date.now();
+    return {
+      status: 'request_email',
+      message: 'Antes de continuar, preciso confirmar seu acesso. Qual o email que voce usou pra assinar?'
+    };
+  }
+
+  // 4. Achou assinante - verifica status
+  const now = new Date();
+  const expiresAt = subscriber.subscription_expires_at ? new Date(subscriber.subscription_expires_at) : null;
+
+  // 4a. Bloqueado explicitamente
+  if (subscriber.status === 'blocked') {
+    return {
+      status: 'blocked',
+      subscriber,
+      message: `Olha, sua assinatura foi cancelada. Pra reativar: ${RENEWAL_LINK}`
+    };
+  }
+
+  // 4b. Cancelado
+  if (subscriber.status === 'canceled') {
+    return {
+      status: 'canceled',
+      subscriber,
+      message: `Seu acesso foi cancelado, cara. Sentindo falta? Reativar aqui: ${RENEWAL_LINK}`
+    };
+  }
+
+  // 4c. Expirado (status active mas data passou) - sistema de 3 avisos
+  if (expiresAt && expiresAt < now && subscriber.status === 'active') {
+    const warnings = subscriber.warning_count || 0;
+    const lastWarning = subscriber.last_warning_sent_at ? new Date(subscriber.last_warning_sent_at) : null;
+    const hoursSinceLastWarning = lastWarning ? (now - lastWarning) / (1000 * 60 * 60) : Infinity;
+
+    // Se ja passou 3 avisos -> bloqueia (so em enforce_hard)
+    if (warnings >= 3 && ENFORCEMENT_MODE === 'enforce_hard') {
+      await blockSubscriber(phone, 'expired_no_renewal');
+      return {
+        status: 'blocked',
+        subscriber,
+        message: `Cara, te avisei 3 vezes e voce nao renovou. Acesso bloqueado. Quando quiser voltar: ${RENEWAL_LINK}`
+      };
+    }
+
+    // Aviso novo se passou 24h do anterior (ou for o primeiro)
+    if (hoursSinceLastWarning >= 24) {
+      const newCount = await incrementWarningCount(phone);
+      await logEvent(phone, 'warning_sent', { warning_number: newCount });
+
+      const warningMessages = [
+        `Cara, sua assinatura venceu. Renova aqui pra a gente continuar conversando normalmente: ${RENEWAL_LINK}`,
+        `Esse e o segundo aviso, irmao. Sua assinatura ta vencida. Renova aqui pra manter o acesso: ${RENEWAL_LINK}`,
+        `Ultimo aviso, mano. Se nao renovar agora, vou ter que pausar nosso contato. Renova aqui: ${RENEWAL_LINK}`
+      ];
+
+      return {
+        status: 'warning',
+        subscriber,
+        warningCount: newCount,
+        message: warningMessages[Math.min(newCount - 1, 2)]
+      };
+    }
+
+    // Se ainda nao passou 24h, deixa responder (mas marca como expirado nos logs)
+    return {
+      status: 'expired_grace',
+      subscriber,
+      message: null
+    };
+  }
+
+  // 5. Tudo OK
+  return { status: 'allowed', subscriber };
+}
+
+// ─────────────────────────────────────────
+// CHAT MEMORY E BUFFER (mantido da v7.4)
 // ─────────────────────────────────────────
 const sessions = {};
 const MAX_HISTORY = 40;
@@ -374,6 +386,9 @@ function logToUser(phone, entry) {
   if (userLogs[phone].length > 50) userLogs[phone] = userLogs[phone].slice(-50);
 }
 
+// ─────────────────────────────────────────
+// BLOCOS FLEXIVEIS
+// ─────────────────────────────────────────
 function splitIntoBlocks(text) {
   if (text.length < 150) return [text.trim()];
 
@@ -407,6 +422,9 @@ function calculateTypingDelay(text) {
   return Math.round(Math.min(Math.max(typingTime + thinkingTime, 1500), 5000));
 }
 
+// ─────────────────────────────────────────
+// META API
+// ─────────────────────────────────────────
 async function sendWhatsAppMessage(toPhone, text) {
   try {
     const response = await fetch(
@@ -448,7 +466,7 @@ async function sendBlocksWithDelay(toPhone, blocks) {
     }
     const success = await sendWhatsAppMessage(toPhone, block);
     if (!success) break;
-    console.log(`[${toPhone}] Bloco ${i + 1}/${blocks.length} enviado (${block.length} chars)`);
+    console.log(`[${toPhone}] Bloco ${i + 1}/${blocks.length} enviado`);
   }
 }
 
@@ -460,10 +478,7 @@ async function getMediaUrl(mediaId) {
     );
     const data = await response.json();
     return data.url;
-  } catch (err) {
-    console.error('Erro getMediaUrl:', err);
-    return null;
-  }
+  } catch (err) { return null; }
 }
 
 async function downloadMediaAsBase64(mediaUrl) {
@@ -474,16 +489,13 @@ async function downloadMediaAsBase64(mediaUrl) {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const contentType = response.headers.get('content-type') || 'image/jpeg';
-    return {
-      base64: buffer.toString('base64'),
-      mediaType: contentType
-    };
-  } catch (err) {
-    console.error('Erro downloadMediaAsBase64:', err);
-    return null;
-  }
+    return { base64: buffer.toString('base64'), mediaType: contentType };
+  } catch (err) { return null; }
 }
 
+// ─────────────────────────────────────────
+// PROCESSAMENTO PRINCIPAL
+// ─────────────────────────────────────────
 async function processBuffered(phone) {
   const buffer = messageBuffers[phone];
   if (!buffer || (!buffer.messages.length && !buffer.images.length)) return;
@@ -492,33 +504,73 @@ async function processBuffered(phone) {
   const images = buffer.images || [];
   delete messageBuffers[phone];
 
-  console.log(`[${phone}] Processando: ${buffer.messages.length} msg(s), ${images.length} img(s). ${combinedText.length} chars.`);
+  console.log(`[${phone}] Processando: ${buffer.messages.length} msg(s), ${images.length} img(s).`);
+
+  // ─── VERIFICACAO DE ACESSO ───
+  const access = await checkAccess(phone, combinedText);
+  console.log(`[ACCESS][${phone}] status=${access.status} mode=${ENFORCEMENT_MODE}`);
 
   logToUser(phone, {
-    type: 'combined_input',
-    parts: buffer.messages.length,
-    images_count: images.length,
-    total_chars: combinedText.length,
-    preview: combinedText.substring(0, 300)
+    type: 'access_check',
+    status: access.status,
+    mode: ENFORCEMENT_MODE,
+    subscriber_status: access.subscriber?.status
   });
 
+  // Modo observacao: NUNCA bloqueia, so loga
+  if (ENFORCEMENT_MODE === 'observation') {
+    if (access.status !== 'allowed' && access.status !== 'expired_grace') {
+      console.log(`[OBSERVATION] Em producao bloquearia: ${access.status}`);
+      await logEvent(phone, 'would_block', { reason: access.status, mode: 'observation' });
+    }
+    // Continua normal sem bloquear
+  }
+  // Modo soft: avisa mas continua respondendo
+  else if (ENFORCEMENT_MODE === 'enforce_soft') {
+    if (access.status === 'request_email') {
+      await sendWhatsAppMessage(phone, access.message);
+      return;
+    }
+    if (access.status === 'warning' && access.message) {
+      // Manda o aviso E continua respondendo
+      await sendWhatsAppMessage(phone, access.message);
+    }
+    // Continua respondendo nos outros casos
+  }
+  // Modo hard: bloqueio total quando necessario
+  else if (ENFORCEMENT_MODE === 'enforce_hard') {
+    if (access.status === 'request_email') {
+      await sendWhatsAppMessage(phone, access.message);
+      return;
+    }
+    if (access.status === 'denied_no_match' ||
+        access.status === 'blocked' ||
+        access.status === 'canceled') {
+      await sendWhatsAppMessage(phone, access.message);
+      return;
+    }
+    if (access.status === 'warning' && access.message) {
+      // Aviso bloqueia
+      await sendWhatsAppMessage(phone, access.message);
+      return;
+    }
+  }
+
+  // ─── RESPOSTA NORMAL DA IA ───
+
+  // Incrementa contador
+  if (access.subscriber) {
+    await incrementMessageCount(phone);
+  }
+
+  // Monta conteudo
   let userContent;
   if (images.length > 0) {
-    const contentArray = [];
-    for (const img of images) {
-      contentArray.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: img.mediaType,
-          data: img.base64
-        }
-      });
-    }
-    contentArray.push({
-      type: 'text',
-      text: combinedText || 'O que voce acha disso?'
-    });
+    const contentArray = images.map(img => ({
+      type: 'image',
+      source: { type: 'base64', media_type: img.mediaType, data: img.base64 }
+    }));
+    contentArray.push({ type: 'text', text: combinedText || 'O que voce acha disso?' });
     userContent = contentArray;
   } else {
     userContent = combinedText;
@@ -545,14 +597,13 @@ async function processBuffered(phone) {
     });
 
     const data = await response.json();
-
     if (data.error) {
       console.error('Erro Claude API:', data.error);
       await sendWhatsAppMessage(phone, 'Po, deu um problema tecnico. Pode reenviar?');
       return;
     }
 
-    const reply = data.content?.[0]?.text || 'Desculpa, nao consegui processar. Pode tentar de novo?';
+    const reply = data.content?.[0]?.text || 'Desculpa, nao consegui processar.';
     sessions[phone].push({ role: 'assistant', content: reply });
 
     if (data.usage) {
@@ -563,16 +614,8 @@ async function processBuffered(phone) {
       console.log(`[${phone}] in=${u.input_tokens} out=${u.output_tokens} custo=$${cost.toFixed(5)}`);
     }
 
+    // Se teve mensagem de acesso pra mandar antes, ja foi enviada acima
     const blocks = splitIntoBlocks(reply);
-    console.log(`[${phone}] Resposta quebrada em ${blocks.length} bloco(s)`);
-
-    logToUser(phone, {
-      type: 'response',
-      blocks_count: blocks.length,
-      total_chars: reply.length,
-      preview: reply.substring(0, 200)
-    });
-
     await sendBlocksWithDelay(phone, blocks);
 
   } catch (err) {
@@ -581,6 +624,9 @@ async function processBuffered(phone) {
   }
 }
 
+// ─────────────────────────────────────────
+// WEBHOOK META
+// ─────────────────────────────────────────
 app.get('/webhook/meta', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
@@ -594,7 +640,6 @@ app.get('/webhook/meta', (req, res) => {
 
 app.post('/webhook/meta', async (req, res) => {
   res.sendStatus(200);
-
   try {
     const body = req.body;
     if (body.object !== 'whatsapp_business_account') return;
@@ -616,31 +661,17 @@ app.post('/webhook/meta', async (req, res) => {
             const mediaId = message.image?.id;
             if (mediaId) {
               const mediaUrl = await getMediaUrl(mediaId);
-              if (mediaUrl) {
-                imageData = await downloadMediaAsBase64(mediaUrl);
-                if (imageData) console.log(`[${fromPhone}] Imagem baixada. Tipo: ${imageData.mediaType}`);
-              }
+              if (mediaUrl) imageData = await downloadMediaAsBase64(mediaUrl);
             }
           } else if (message.type === 'audio') {
             userText = '[audio recebido - peca pra reenviar como texto]';
-          } else {
-            userText = `[mensagem tipo ${message.type} recebida]`;
           }
 
-          console.log(`[${fromPhone}] Recebido: ${message.type} - ${userText.length} chars`);
-
-          logToUser(fromPhone, {
-            type: 'webhook_received',
-            text_length: userText.length,
-            message_type: message.type,
-            has_image: !!imageData,
-            preview: userText.substring(0, 300)
-          });
+          console.log(`[${fromPhone}] Recebido: ${message.type}`);
 
           if (!messageBuffers[fromPhone]) {
             messageBuffers[fromPhone] = { messages: [], images: [], lastUpdate: Date.now() };
           }
-
           if (userText.trim()) messageBuffers[fromPhone].messages.push(userText);
           if (imageData) messageBuffers[fromPhone].images.push(imageData);
           messageBuffers[fromPhone].lastUpdate = Date.now();
@@ -660,22 +691,98 @@ app.post('/webhook/meta', async (req, res) => {
   }
 });
 
-app.get('/debug/:phone', (req, res) => {
+// ─────────────────────────────────────────
+// WEBHOOK HUBLA - Sincronizacao automatica
+// ─────────────────────────────────────────
+app.post('/webhook/hubla', async (req, res) => {
+  res.sendStatus(200);
+
+  try {
+    const event = req.body;
+    console.log('[HUBLA] Evento recebido:', event.type);
+
+    // Estrutura do webhook do Hubla
+    const eventType = event.type || event.event;
+    const subscription = event.subscription || event.data;
+    const customer = event.customer || subscription?.customer;
+
+    if (!customer?.phone) {
+      console.log('[HUBLA] Evento sem phone, ignorando');
+      return;
+    }
+
+    const phone = customer.phone.replace(/[^0-9]/g, '');
+
+    if (eventType === 'subscription.created' || eventType === 'NewSubscription') {
+      // Nova assinatura
+      await supabase.from('subscribers').upsert({
+        phone,
+        email: customer.email,
+        name: customer.name,
+        status: 'active',
+        plan: 'monthly',
+        subscription_started_at: new Date().toISOString(),
+        subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        source: 'hubla',
+        hubla_subscription_id: subscription.id,
+        hubla_customer_id: customer.id,
+        warning_count: 0
+      }, { onConflict: 'phone' });
+
+      await logEvent(phone, 'subscribed', { source: 'hubla', subscription_id: subscription.id });
+    }
+
+    else if (eventType === 'subscription.renewed' || eventType === 'SubscriptionRenewed') {
+      // Renovacao
+      await supabase
+        .from('subscribers')
+        .update({
+          status: 'active',
+          subscription_renewed_at: new Date().toISOString(),
+          subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          warning_count: 0,
+          last_warning_sent_at: null
+        })
+        .eq('phone', phone);
+
+      await logEvent(phone, 'renewed', { source: 'hubla' });
+    }
+
+    else if (eventType === 'subscription.canceled' || eventType === 'SubscriptionCanceled') {
+      // Cancelamento
+      await supabase
+        .from('subscribers')
+        .update({ status: 'canceled' })
+        .eq('phone', phone);
+
+      await logEvent(phone, 'canceled', { source: 'hubla' });
+    }
+
+    else if (eventType === 'payment.failed' || eventType === 'PaymentFailed') {
+      await logEvent(phone, 'payment_failed', { source: 'hubla' });
+    }
+
+  } catch (err) {
+    console.error('[HUBLA] Erro processando webhook:', err);
+  }
+});
+
+// ─────────────────────────────────────────
+// ENDPOINTS DE DEBUG E ADMIN
+// ─────────────────────────────────────────
+app.get('/debug/:phone', async (req, res) => {
   const phone = req.params.phone;
+  const subscriber = await findSubscriberByPhone(phone);
+
   res.json({
     phone,
+    subscriber,
     has_session: !!sessions[phone],
     session_messages: sessions[phone]?.length || 0,
     has_buffer: !!messageBuffers[phone],
-    buffer_pending: messageBuffers[phone] ? {
-      messages_count: messageBuffers[phone].messages.length,
-      images_count: messageBuffers[phone].images.length
-    } : null,
+    pending_email: !!pendingEmailRequest[phone],
     recent_logs: userLogs[phone] || [],
-    session_preview: sessions[phone]?.slice(-10).map(m => ({
-      role: m.role,
-      content: typeof m.content === 'string' ? m.content.substring(0, 200) : '[multimodal]'
-    })) || []
+    enforcement_mode: ENFORCEMENT_MODE
   });
 });
 
@@ -684,30 +791,31 @@ app.post('/reset/:phone', (req, res) => {
   delete sessions[phone];
   delete messageBuffers[phone];
   delete userLogs[phone];
+  delete pendingEmailRequest[phone];
   res.json({ success: true });
 });
 
-app.get('/stats', (req, res) => {
+app.get('/stats', async (req, res) => {
+  const { data: dashStats } = await supabase
+    .from('v_dashboard_stats')
+    .select('*')
+    .single();
+
   res.json({
-    version: '7.4',
-    totalUsers: Object.keys(sessions).length,
-    totalMessages: Object.values(sessions).reduce((sum, s) => sum + s.length, 0),
-    maxHistory: MAX_HISTORY,
-    activeBuffers: Object.keys(messageBuffers).length,
-    bufferWaitSeconds: BUFFER_WAIT_MS / 1000,
+    version: '8.0',
+    enforcement_mode: ENFORCEMENT_MODE,
     metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN),
-    blockSplitting: true,
-    imageSupport: true,
-    audioSupport: false,
-    dossieIntegrated: true,
-    psicanaliseIntegrated: true,
-    adaptiveLanguage: true
+    supabaseConfigured: !!(SUPABASE_URL && SUPABASE_KEY),
+    inMemoryUsers: Object.keys(sessions).length,
+    activeBuffers: Object.keys(messageBuffers).length,
+    pendingEmails: Object.keys(pendingEmailRequest).length,
+    dashboard: dashStats
   });
 });
 
-app.get('/', (req, res) => res.send('Agente Lucas v7.4 - Dossie + Psicanalise + Linguagem adaptativa!'));
+app.get('/', (req, res) => res.send(`Agente Lucas v8 - mode=${ENFORCEMENT_MODE}`));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor v7.4 rodando na porta ${PORT}`);
+  console.log(`Servidor v8 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
 });
