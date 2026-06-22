@@ -1,14 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// AGENTE LUCAS KRAUSCHE - SERVIDOR v8
-// Sistema de verificacao de assinatura com Supabase
-//
-// MUDANCAS v8:
-// - Integracao com Supabase
-// - Verificacao de assinante antes de responder (logica hibrida)
-// - 3 avisos antes de bloquear (1 dia entre cada)
-// - MODO de operacao controlado por env var (observation/enforce_soft/enforce_hard)
-// - Webhook Hubla para sincronizacao automatica
-// - Mantem TUDO da v7.4 (dossies, blocos, imagens, antiaggressividade)
+// AGENTE LUCAS KRAUSCHE - SERVIDOR v8.1
+// Webhook Hubla 100% mapeado (todos eventos)
 // ═══════════════════════════════════════════════════════════════
 
 const express = require('express');
@@ -16,9 +8,6 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
-// ─────────────────────────────────────────
-// CONFIGURACOES
-// ─────────────────────────────────────────
 const META_TOKEN = process.env.META_TOKEN;
 const META_PHONE_ID = process.env.META_PHONE_ID;
 const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
@@ -27,137 +16,68 @@ const META_API_VERSION = 'v22.0';
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
-const HUBLA_WEBHOOK_SECRET = process.env.HUBLA_WEBHOOK_SECRET || 'sem_secret_configurado';
-
-// MODO DE OPERACAO - controla rigor do bloqueio
-// 'observation'   = nao bloqueia, so loga (safe para testar)
-// 'enforce_soft'  = avisa, mas continua respondendo
-// 'enforce_hard'  = bloqueio total apos 3 avisos
 const ENFORCEMENT_MODE = process.env.ENFORCEMENT_MODE || 'observation';
-
-// Link de renovacao (configura no Hubla)
-const RENEWAL_LINK = process.env.RENEWAL_LINK || 'https://pay.hubla.com.br/SEU_LINK_AQUI';
+const RENEWAL_LINK = process.env.RENEWAL_LINK || 'https://pay.hubla.com.br/SEU_LINK';
+const HUBLA_TOKEN = process.env.HUBLA_TOKEN; // Token para validar autenticidade do webhook
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-console.log(`[INIT] Servidor v8 iniciando com MODE=${ENFORCEMENT_MODE}`);
+console.log(`[INIT] Servidor v8.1 iniciando com MODE=${ENFORCEMENT_MODE}`);
 
 // ─────────────────────────────────────────
-// SYSTEM PROMPT v8 - Mantido da v7.4
+// SYSTEM PROMPT (mantido)
 // ─────────────────────────────────────────
-const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos masculinos. Voce ja atendeu centenas de homens em crises relacionais agudas.
+const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos masculinos.
 
-Sua condução combina ACOLHIMENTO EMPATICO + RACIONALIDADE ESTRATEGICA + PROFUNDIDADE PSICANALITICA.
-
-═══════════════════════════════════════════
-REGRAS ABSOLUTAS (NUNCA VIOLE)
-═══════════════════════════════════════════
-
-1. NUNCA OFENDE, AGRIDE OU DESRESPEITA. Mesmo se corrigido.
-2. NUNCA BRIGA. Discordancia se faz com firmeza e respeito.
-3. SE NAO ENTENDEU, A FALHA E SUA. Assume falha tecnica gentilmente.
+REGRAS ABSOLUTAS:
+1. NUNCA OFENDE, AGRIDE OU DESRESPEITA.
+2. NUNCA BRIGA. Discordancia com firmeza e respeito.
+3. SE NAO ENTENDEU, A FALHA E SUA.
 4. SE FOR CORRIGIDO, RECONHECE E AGRADECE.
 5. NUNCA REPETE o que ja disse se o LEAD reclamou.
 
-═══════════════════════════════════════════
-LINGUAGEM ADAPTATIVA
-═══════════════════════════════════════════
+LINGUAGEM ADAPTATIVA: Simples por padrao, tecnica quando LEAD demonstrar sofisticacao.
 
-Por padrao, use LINGUAGEM SIMPLES. So aprofunde com termos tecnicos quando o LEAD demonstrar sofisticacao.
+3 ARQUETIPOS (identificar mentalmente, nao rotular):
+- CUIDADOR/PROVEDOR: "Eu fiz tudo por ela"
+- "PAI" DA PARCEIRA: "Ela me ve como amigo"
+- DEPENDENTE EMOCIONAL: "Nao aguento ficar sozinho"
 
-═══════════════════════════════════════════
-3 ARQUETIPOS DO PUBLICO
-═══════════════════════════════════════════
+METODOLOGIA 3 ETAPAS: Conhecer > Entender > Plano de Acao.
 
-CUIDADOR/PROVEDOR - "Eu fiz tudo por ela"
-"PAI" DA PARCEIRA - "Ela me ve como amigo"
-DEPENDENTE EMOCIONAL - "Nao aguento ficar sozinho"
+TERMOS-CHAVE: Imprevisibilidade, Contato zero, Reconquista da autoadmiracao, Ser a rocha, Anular-se para caber na vida do outro, Distanciamento estrategico, Evolucao visivel.
 
-Identifique mentalmente, NAO ROTULE explicitamente.
+3 PILARES: Distanciamento Estrategico, Evolucao Visivel, Alinhamento de Proposito.
 
-═══════════════════════════════════════════
-METODOLOGIA 3 ETAPAS
-═══════════════════════════════════════════
+FRASES ICONICAS:
+- Quer reatar: "A prioridade nao e a reconciliacao, mas construcao de um homem que ela nao consiga ignorar."
+- Culpado: "O erro foi tentar agradar excessivamente. Voce se anulou para caber na vida do outro."
+- Desespero: "Voce quer aliviar a SUA ansiedade. Nao tem a ver com ela voltar."
 
-1. CONHECER (idade, profissao, hobbies)
-2. ENTENDER (relacionamento, ruptura)
-3. PLANO DE ACAO (o que fazer HOJE)
+NEUROCIENCIA: 21 dias para consolidar novo padrao.
+MASTERMIND: Raiva como combustivel para crescimento.
 
-═══════════════════════════════════════════
-TERMOS-CHAVE
-═══════════════════════════════════════════
+FORMATO: 1-3 paragrafos, sem forcar. Curto pra curto, profundo pra profundo.
 
-"Imprevisibilidade", "Contato zero", "Reconquista da autoadmiracao",
-"Ser a rocha", "Anular-se para caber na vida do outro",
-"Distanciamento estrategico", "Evolucao visivel"
+ESTILO: Direto, firme E acolhedor. Coloquial brasileiro (po, irmao, mano, cara). Sem travessao, bullets ou listas.
 
-═══════════════════════════════════════════
-3 PILARES
-═══════════════════════════════════════════
+ANALISE DE IMAGENS: Confirma, analisa microssinais (tom, emoji, tamanho), orienta.
 
-PILAR 1 - DISTANCIAMENTO ESTRATEGICO
-PILAR 2 - EVOLUCAO VISIVEL
-PILAR 3 - ALINHAMENTO DE PROPOSITO
+ENCAMINHAMENTO MENTORIA: Casos graves (suicidio, violencia, vicios) -> mentoria 1:1 com Lucas. Em ideacao suicida: CVV 188.
 
-═══════════════════════════════════════════
-FRASES ICONICAS
-═══════════════════════════════════════════
-
-Quer reatar: "A prioridade agora nao e a reconciliacao, mas construcao de um homem que ela nao consiga ignorar."
-
-Culpado: "O erro foi tentar agradar excessivamente. Voce se anulou para caber na vida do outro."
-
-Desespero: "Voce quer aliviar a SUA ansiedade. Nao tem a ver com ela voltar."
-
-═══════════════════════════════════════════
-NEUROCIENCIA E MASTERMIND
-═══════════════════════════════════════════
-
-21 dias para consolidar novo padrao (use quando aplicavel).
-Raiva como combustivel para crescimento (Mastermind/Napoleon Hill).
-
-═══════════════════════════════════════════
-FORMATO E ESTILO
-═══════════════════════════════════════════
-
-- Mensagens curtas ou medias (1-3 paragrafos)
-- Tom direto, firme E acolhedor
-- Coloquial brasileiro: po, irmao, mano, cara
-- NUNCA travessao, bullets, listas
-
-═══════════════════════════════════════════
-ANALISE DE IMAGENS
-═══════════════════════════════════════════
-
-Confirma recebimento, analisa microssinais (tom, emoji, tamanho), orienta.
-
-═══════════════════════════════════════════
-ENCAMINHAMENTO PARA MENTORIA
-═══════════════════════════════════════════
-
-Em casos graves (suicidio, violencia, vicios), sugerir mentoria 1:1 com Lucas em pessoa.
-Em ideacao suicida: CVV 188.
-
-═══════════════════════════════════════════
-ENGAJAMENTO E RETENCAO
-═══════════════════════════════════════════
-
-Sempre termine com algo que provoca retorno (pergunta, update, tarefa).
-Seja especifico, nao generico.`;
+ENGAJAMENTO: Sempre termine com algo que provoca retorno. Seja especifico.`;
 
 // ─────────────────────────────────────────
 // SUPABASE HELPERS
 // ─────────────────────────────────────────
-
 async function findSubscriberByPhone(phone) {
   const { data, error } = await supabase
     .from('subscribers')
     .select('*')
     .eq('phone', phone)
     .maybeSingle();
-
   if (error) {
-    console.error(`[DB] Erro buscando phone ${phone}:`, error.message);
+    console.error(`[DB] Erro: ${error.message}`);
     return null;
   }
   return data;
@@ -169,7 +89,6 @@ async function findSubscriberByEmail(email) {
     .select('*')
     .ilike('email', email.toLowerCase().trim())
     .limit(1);
-
   if (error || !data || data.length === 0) return null;
   return data[0];
 }
@@ -177,10 +96,7 @@ async function findSubscriberByEmail(email) {
 async function logEvent(phone, eventType, eventData = {}, source = 'system') {
   try {
     await supabase.from('events').insert({
-      phone,
-      event_type: eventType,
-      event_data: eventData,
-      source
+      phone, event_type: eventType, event_data: eventData, source
     });
   } catch (err) {
     console.error('[DB] Erro logando evento:', err.message);
@@ -188,24 +104,17 @@ async function logEvent(phone, eventType, eventData = {}, source = 'system') {
 }
 
 async function updateSubscriberPhone(oldPhone, newPhone) {
-  // Vincula novo telefone WhatsApp ao assinante encontrado por email
-  const { error } = await supabase
+  await supabase
     .from('subscribers')
     .update({ phone: newPhone, updated_at: new Date().toISOString() })
     .eq('phone', oldPhone);
-
-  if (error) console.error('[DB] Erro atualizando phone:', error.message);
 }
 
 async function incrementWarningCount(phone) {
   const { data } = await supabase
-    .from('subscribers')
-    .select('warning_count')
-    .eq('phone', phone)
-    .single();
-
+    .from('subscribers').select('warning_count')
+    .eq('phone', phone).single();
   const newCount = (data?.warning_count || 0) + 1;
-
   await supabase
     .from('subscribers')
     .update({
@@ -213,7 +122,6 @@ async function incrementWarningCount(phone) {
       last_warning_sent_at: new Date().toISOString()
     })
     .eq('phone', phone);
-
   return newCount;
 }
 
@@ -226,17 +134,13 @@ async function blockSubscriber(phone, reason) {
       blocked_reason: reason
     })
     .eq('phone', phone);
-
   await logEvent(phone, 'blocked', { reason });
 }
 
 async function incrementMessageCount(phone) {
   const { data } = await supabase
-    .from('subscribers')
-    .select('total_messages')
-    .eq('phone', phone)
-    .single();
-
+    .from('subscribers').select('total_messages')
+    .eq('phone', phone).single();
   await supabase
     .from('subscribers')
     .update({
@@ -247,28 +151,33 @@ async function incrementMessageCount(phone) {
 }
 
 // ─────────────────────────────────────────
-// VERIFICACAO DE ACESSO (LOGICA HIBRIDA)
+// HELPER: Normaliza telefone do Hubla
 // ─────────────────────────────────────────
+function normalizeHublaPhone(rawPhone) {
+  if (!rawPhone) return null;
+  let phone = String(rawPhone).replace(/[^0-9]/g, '');
+  // Hubla manda sem o "55" no Brasil
+  if (phone.length === 11 || phone.length === 10) {
+    phone = '55' + phone;
+  }
+  return phone;
+}
 
-// Estado em memoria de quem ja foi perguntado o email mas ainda nao respondeu
+// ─────────────────────────────────────────
+// VERIFICACAO DE ACESSO (hibrida)
+// ─────────────────────────────────────────
 const pendingEmailRequest = {};
 
 async function checkAccess(phone, messageText) {
-  // 1. Tenta achar por telefone
   let subscriber = await findSubscriberByPhone(phone);
 
-  // 2. Se nao encontrou, talvez seja resposta de email
   if (!subscriber && pendingEmailRequest[phone]) {
     const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
     const match = messageText.match(emailRegex);
-
     if (match) {
       const email = match[0];
-      console.log(`[ACCESS] ${phone} forneceu email: ${email}`);
-
       const found = await findSubscriberByEmail(email);
       if (found) {
-        // Vincula esse telefone ao assinante encontrado
         await updateSubscriberPhone(found.phone, phone);
         await logEvent(phone, 'phone_linked', { old_phone: found.phone, email });
         delete pendingEmailRequest[phone];
@@ -280,13 +189,12 @@ async function checkAccess(phone, messageText) {
       } else {
         return {
           status: 'denied_no_match',
-          message: `Nao encontrei assinatura ativa com esse email. Se voce e assinante, contata o suporte. Se quiser assinar agora: ${RENEWAL_LINK}`
+          message: `Nao encontrei assinatura ativa com esse email. Pra assinar: ${RENEWAL_LINK}`
         };
       }
     }
   }
 
-  // 3. Se nao tem assinante nem pediu email ainda
   if (!subscriber) {
     pendingEmailRequest[phone] = Date.now();
     return {
@@ -295,53 +203,39 @@ async function checkAccess(phone, messageText) {
     };
   }
 
-  // 4. Achou assinante - verifica status
   const now = new Date();
   const expiresAt = subscriber.subscription_expires_at ? new Date(subscriber.subscription_expires_at) : null;
 
-  // 4a. Bloqueado explicitamente
   if (subscriber.status === 'blocked') {
-    return {
-      status: 'blocked',
-      subscriber,
-      message: `Olha, sua assinatura foi cancelada. Pra reativar: ${RENEWAL_LINK}`
-    };
+    return { status: 'blocked', subscriber, message: `Sua assinatura foi cancelada. Reativar: ${RENEWAL_LINK}` };
   }
 
-  // 4b. Cancelado
   if (subscriber.status === 'canceled') {
-    return {
-      status: 'canceled',
-      subscriber,
-      message: `Seu acesso foi cancelado, cara. Sentindo falta? Reativar aqui: ${RENEWAL_LINK}`
-    };
+    return { status: 'canceled', subscriber, message: `Seu acesso foi cancelado. Reativar: ${RENEWAL_LINK}` };
   }
 
-  // 4c. Expirado (status active mas data passou) - sistema de 3 avisos
   if (expiresAt && expiresAt < now && subscriber.status === 'active') {
     const warnings = subscriber.warning_count || 0;
     const lastWarning = subscriber.last_warning_sent_at ? new Date(subscriber.last_warning_sent_at) : null;
     const hoursSinceLastWarning = lastWarning ? (now - lastWarning) / (1000 * 60 * 60) : Infinity;
 
-    // Se ja passou 3 avisos -> bloqueia (so em enforce_hard)
     if (warnings >= 3 && ENFORCEMENT_MODE === 'enforce_hard') {
       await blockSubscriber(phone, 'expired_no_renewal');
       return {
         status: 'blocked',
         subscriber,
-        message: `Cara, te avisei 3 vezes e voce nao renovou. Acesso bloqueado. Quando quiser voltar: ${RENEWAL_LINK}`
+        message: `Te avisei 3 vezes e voce nao renovou. Acesso bloqueado. Reativar: ${RENEWAL_LINK}`
       };
     }
 
-    // Aviso novo se passou 24h do anterior (ou for o primeiro)
     if (hoursSinceLastWarning >= 24) {
       const newCount = await incrementWarningCount(phone);
       await logEvent(phone, 'warning_sent', { warning_number: newCount });
 
       const warningMessages = [
-        `Cara, sua assinatura venceu. Renova aqui pra a gente continuar conversando normalmente: ${RENEWAL_LINK}`,
-        `Esse e o segundo aviso, irmao. Sua assinatura ta vencida. Renova aqui pra manter o acesso: ${RENEWAL_LINK}`,
-        `Ultimo aviso, mano. Se nao renovar agora, vou ter que pausar nosso contato. Renova aqui: ${RENEWAL_LINK}`
+        `Cara, sua assinatura venceu. Renova aqui pra continuar: ${RENEWAL_LINK}`,
+        `Segundo aviso. Sua assinatura ta vencida. Renova: ${RENEWAL_LINK}`,
+        `Ultimo aviso. Se nao renovar, vou pausar nosso contato. Renova: ${RENEWAL_LINK}`
       ];
 
       return {
@@ -352,20 +246,14 @@ async function checkAccess(phone, messageText) {
       };
     }
 
-    // Se ainda nao passou 24h, deixa responder (mas marca como expirado nos logs)
-    return {
-      status: 'expired_grace',
-      subscriber,
-      message: null
-    };
+    return { status: 'expired_grace', subscriber, message: null };
   }
 
-  // 5. Tudo OK
   return { status: 'allowed', subscriber };
 }
 
 // ─────────────────────────────────────────
-// CHAT MEMORY E BUFFER (mantido da v7.4)
+// CHAT MEMORY E BUFFER
 // ─────────────────────────────────────────
 const sessions = {};
 const MAX_HISTORY = 40;
@@ -386,40 +274,28 @@ function logToUser(phone, entry) {
   if (userLogs[phone].length > 50) userLogs[phone] = userLogs[phone].slice(-50);
 }
 
-// ─────────────────────────────────────────
-// BLOCOS FLEXIVEIS
-// ─────────────────────────────────────────
 function splitIntoBlocks(text) {
   if (text.length < 150) return [text.trim()];
-
   let blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(b => b.length > 0);
-
   if (blocks.length === 1 && text.length < 400) return [text.trim()];
-
   if (blocks.length === 1 && text.length >= 400) {
     const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
     if (sentences.length >= 2) {
       const mid = Math.ceil(sentences.length / 2);
-      blocks = [
-        sentences.slice(0, mid).join(' ').trim(),
-        sentences.slice(mid).join(' ').trim()
-      ].filter(b => b.length > 0);
+      blocks = [sentences.slice(0, mid).join(' ').trim(), sentences.slice(mid).join(' ').trim()].filter(b => b.length > 0);
     }
   }
-
   if (blocks.length > 3) {
     const lastBlocks = blocks.slice(2).join('\n\n');
     blocks = [blocks[0], blocks[1], lastBlocks];
   }
-
   return blocks;
 }
 
 function calculateTypingDelay(text) {
   const charsPerSecond = 40;
-  const thinkingTime = 800;
   const typingTime = (text.length / charsPerSecond) * 1000;
-  return Math.round(Math.min(Math.max(typingTime + thinkingTime, 1500), 5000));
+  return Math.round(Math.min(Math.max(typingTime + 800, 1500), 5000));
 }
 
 // ─────────────────────────────────────────
@@ -431,15 +307,9 @@ async function sendWhatsAppMessage(toPhone, text) {
       `https://graph.facebook.com/${META_API_VERSION}/${META_PHONE_ID}/messages`,
       {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${META_TOKEN}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${META_TOKEN}` },
         body: JSON.stringify({
-          messaging_product: 'whatsapp',
-          to: toPhone,
-          type: 'text',
-          text: { body: text }
+          messaging_product: 'whatsapp', to: toPhone, type: 'text', text: { body: text }
         })
       }
     );
@@ -449,35 +319,25 @@ async function sendWhatsAppMessage(toPhone, text) {
       return false;
     }
     return true;
-  } catch (err) {
-    console.error('Erro sendWhatsAppMessage:', err);
-    return false;
-  }
+  } catch (err) { return false; }
 }
 
 async function sendBlocksWithDelay(toPhone, blocks) {
   for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (i > 0) {
-      const delay = calculateTypingDelay(block);
-      await new Promise(resolve => setTimeout(resolve, delay));
-    } else {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-    }
-    const success = await sendWhatsAppMessage(toPhone, block);
-    if (!success) break;
+    if (i > 0) await new Promise(r => setTimeout(r, calculateTypingDelay(blocks[i])));
+    else await new Promise(r => setTimeout(r, 1000));
+    const ok = await sendWhatsAppMessage(toPhone, blocks[i]);
+    if (!ok) break;
     console.log(`[${toPhone}] Bloco ${i + 1}/${blocks.length} enviado`);
   }
 }
 
 async function getMediaUrl(mediaId) {
   try {
-    const response = await fetch(
-      `https://graph.facebook.com/${META_API_VERSION}/${mediaId}`,
-      { headers: { 'Authorization': `Bearer ${META_TOKEN}` } }
-    );
-    const data = await response.json();
-    return data.url;
+    const response = await fetch(`https://graph.facebook.com/${META_API_VERSION}/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${META_TOKEN}` }
+    });
+    return (await response.json()).url;
   } catch (err) { return null; }
 }
 
@@ -486,15 +346,16 @@ async function downloadMediaAsBase64(mediaUrl) {
     const response = await fetch(mediaUrl, {
       headers: { 'Authorization': `Bearer ${META_TOKEN}` }
     });
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
-    return { base64: buffer.toString('base64'), mediaType: contentType };
+    const buffer = Buffer.from(await response.arrayBuffer());
+    return {
+      base64: buffer.toString('base64'),
+      mediaType: response.headers.get('content-type') || 'image/jpeg'
+    };
   } catch (err) { return null; }
 }
 
 // ─────────────────────────────────────────
-// PROCESSAMENTO PRINCIPAL
+// PROCESSAMENTO
 // ─────────────────────────────────────────
 async function processBuffered(phone) {
   const buffer = messageBuffers[phone];
@@ -506,64 +367,30 @@ async function processBuffered(phone) {
 
   console.log(`[${phone}] Processando: ${buffer.messages.length} msg(s), ${images.length} img(s).`);
 
-  // ─── VERIFICACAO DE ACESSO ───
   const access = await checkAccess(phone, combinedText);
   console.log(`[ACCESS][${phone}] status=${access.status} mode=${ENFORCEMENT_MODE}`);
+  logToUser(phone, { type: 'access_check', status: access.status, mode: ENFORCEMENT_MODE });
 
-  logToUser(phone, {
-    type: 'access_check',
-    status: access.status,
-    mode: ENFORCEMENT_MODE,
-    subscriber_status: access.subscriber?.status
-  });
-
-  // Modo observacao: NUNCA bloqueia, so loga
   if (ENFORCEMENT_MODE === 'observation') {
     if (access.status !== 'allowed' && access.status !== 'expired_grace') {
       console.log(`[OBSERVATION] Em producao bloquearia: ${access.status}`);
       await logEvent(phone, 'would_block', { reason: access.status, mode: 'observation' });
     }
-    // Continua normal sem bloquear
-  }
-  // Modo soft: avisa mas continua respondendo
-  else if (ENFORCEMENT_MODE === 'enforce_soft') {
-    if (access.status === 'request_email') {
-      await sendWhatsAppMessage(phone, access.message);
-      return;
+  } else if (ENFORCEMENT_MODE === 'enforce_soft') {
+    if (access.status === 'request_email') { await sendWhatsAppMessage(phone, access.message); return; }
+    if (access.status === 'warning' && access.message) await sendWhatsAppMessage(phone, access.message);
+  } else if (ENFORCEMENT_MODE === 'enforce_hard') {
+    if (access.status === 'request_email') { await sendWhatsAppMessage(phone, access.message); return; }
+    if (['denied_no_match', 'blocked', 'canceled'].includes(access.status)) {
+      await sendWhatsAppMessage(phone, access.message); return;
     }
     if (access.status === 'warning' && access.message) {
-      // Manda o aviso E continua respondendo
-      await sendWhatsAppMessage(phone, access.message);
-    }
-    // Continua respondendo nos outros casos
-  }
-  // Modo hard: bloqueio total quando necessario
-  else if (ENFORCEMENT_MODE === 'enforce_hard') {
-    if (access.status === 'request_email') {
-      await sendWhatsAppMessage(phone, access.message);
-      return;
-    }
-    if (access.status === 'denied_no_match' ||
-        access.status === 'blocked' ||
-        access.status === 'canceled') {
-      await sendWhatsAppMessage(phone, access.message);
-      return;
-    }
-    if (access.status === 'warning' && access.message) {
-      // Aviso bloqueia
-      await sendWhatsAppMessage(phone, access.message);
-      return;
+      await sendWhatsAppMessage(phone, access.message); return;
     }
   }
 
-  // ─── RESPOSTA NORMAL DA IA ───
+  if (access.subscriber) await incrementMessageCount(phone);
 
-  // Incrementa contador
-  if (access.subscriber) {
-    await incrementMessageCount(phone);
-  }
-
-  // Monta conteudo
   let userContent;
   if (images.length > 0) {
     const contentArray = images.map(img => ({
@@ -595,29 +422,22 @@ async function processBuffered(phone) {
         messages: sessions[phone]
       })
     });
-
     const data = await response.json();
     if (data.error) {
-      console.error('Erro Claude API:', data.error);
       await sendWhatsAppMessage(phone, 'Po, deu um problema tecnico. Pode reenviar?');
       return;
     }
-
     const reply = data.content?.[0]?.text || 'Desculpa, nao consegui processar.';
     sessions[phone].push({ role: 'assistant', content: reply });
 
     if (data.usage) {
       const u = data.usage;
-      const cost = (u.input_tokens / 1000000) * 1 +
-                   ((u.cache_read_input_tokens || 0) / 1000000) * 0.10 +
-                   (u.output_tokens / 1000000) * 5;
+      const cost = (u.input_tokens / 1e6) * 1 + ((u.cache_read_input_tokens || 0) / 1e6) * 0.10 + (u.output_tokens / 1e6) * 5;
       console.log(`[${phone}] in=${u.input_tokens} out=${u.output_tokens} custo=$${cost.toFixed(5)}`);
     }
 
-    // Se teve mensagem de acesso pra mandar antes, ja foi enviada acima
     const blocks = splitIntoBlocks(reply);
     await sendBlocksWithDelay(phone, blocks);
-
   } catch (err) {
     console.error('Erro processBuffered:', err);
     await sendWhatsAppMessage(phone, 'So um segundo, pode repetir?');
@@ -631,7 +451,6 @@ app.get('/webhook/meta', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
   if (mode === 'subscribe' && token === META_VERIFY_TOKEN) {
     return res.status(200).send(challenge);
   }
@@ -643,17 +462,14 @@ app.post('/webhook/meta', async (req, res) => {
   try {
     const body = req.body;
     if (body.object !== 'whatsapp_business_account') return;
-
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         const value = change.value;
         if (!value.messages) continue;
-
         for (const message of value.messages) {
           const fromPhone = message.from;
           let userText = '';
           let imageData = null;
-
           if (message.type === 'text') {
             userText = message.text?.body || '';
           } else if (message.type === 'image') {
@@ -666,16 +482,12 @@ app.post('/webhook/meta', async (req, res) => {
           } else if (message.type === 'audio') {
             userText = '[audio recebido - peca pra reenviar como texto]';
           }
-
-          console.log(`[${fromPhone}] Recebido: ${message.type}`);
-
           if (!messageBuffers[fromPhone]) {
             messageBuffers[fromPhone] = { messages: [], images: [], lastUpdate: Date.now() };
           }
           if (userText.trim()) messageBuffers[fromPhone].messages.push(userText);
           if (imageData) messageBuffers[fromPhone].images.push(imageData);
           messageBuffers[fromPhone].lastUpdate = Date.now();
-
           setTimeout(async () => {
             if (!messageBuffers[fromPhone]) return;
             const timeSinceLast = Date.now() - messageBuffers[fromPhone].lastUpdate;
@@ -692,74 +504,145 @@ app.post('/webhook/meta', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// WEBHOOK HUBLA - Sincronizacao automatica
+// WEBHOOK HUBLA - v8.1 com TODOS eventos mapeados
 // ─────────────────────────────────────────
 app.post('/webhook/hubla', async (req, res) => {
   res.sendStatus(200);
 
   try {
-    const event = req.body;
-    console.log('[HUBLA] Evento recebido:', event.type);
+    const payload = req.body;
+    const eventType = payload.type;
+    const event = payload.event || {};
+    const version = payload.version || 'unknown';
 
-    // Estrutura do webhook do Hubla
-    const eventType = event.type || event.event;
-    const subscription = event.subscription || event.data;
-    const customer = event.customer || subscription?.customer;
+    console.log(`[HUBLA] Recebido: ${eventType} | v${version}`);
 
-    if (!customer?.phone) {
-      console.log('[HUBLA] Evento sem phone, ignorando');
+    // Validacao de token (opcional)
+    if (HUBLA_TOKEN && req.headers['x-hubla-token'] !== HUBLA_TOKEN) {
+      console.warn('[HUBLA] Token invalido, ignorando');
       return;
     }
 
-    const phone = customer.phone.replace(/[^0-9]/g, '');
+    // ───── EXTRAI DADOS conforme estrutura ─────
+    let phone, email, fullName, customerId, subscriptionId, billingCycleMonths;
 
-    if (eventType === 'subscription.created' || eventType === 'NewSubscription') {
-      // Nova assinatura
-      await supabase.from('subscribers').upsert({
-        phone,
-        email: customer.email,
-        name: customer.name,
+    // v1.0.0: CanceledSubscription (estrutura flat)
+    if (version === '1.0.0' || eventType === 'CanceledSubscription') {
+      phone = normalizeHublaPhone(event.userPhone);
+      email = event.userEmail;
+      fullName = event.userName;
+      customerId = event.userId;
+      subscriptionId = null;
+    }
+    // v2.0.0: estrutura nested
+    else {
+      const subscription = event.subscription || {};
+      const user = event.user || subscription.payer || {};
+      phone = normalizeHublaPhone(user.phone || subscription.payer?.phone);
+      email = user.email || subscription.payer?.email;
+      fullName = (user.firstName && user.lastName)
+        ? `${user.firstName} ${user.lastName}`
+        : user.firstName || null;
+      customerId = user.id || subscription.payerId;
+      subscriptionId = subscription.id;
+      billingCycleMonths = subscription.billingCycleMonths || 1;
+    }
+
+    if (!phone) {
+      console.log(`[HUBLA] ${eventType}: sem telefone, ignorando`);
+      await logEvent('unknown', 'hubla_no_phone', { eventType, payload }, 'hubla');
+      return;
+    }
+
+    // Log evento bruto
+    await logEvent(phone, 'hubla_webhook_received', {
+      eventType, version, subscription_id: subscriptionId
+    }, 'hubla');
+
+    // ───── PROCESSA POR TIPO DE EVENTO ─────
+
+    // CRIAR ASSINATURA / ATIVAR
+    if (eventType === 'subscription.created' || eventType === 'subscription.activated') {
+      const months = billingCycleMonths || 1;
+      const expiresAt = new Date(Date.now() + months * 30 * 24 * 60 * 60 * 1000).toISOString();
+      const planName = months === 1 ? 'monthly' : months === 12 ? 'annual' : `${months}_months`;
+
+      const { error } = await supabase.from('subscribers').upsert({
+        phone, email, name: fullName,
         status: 'active',
-        plan: 'monthly',
+        plan: planName,
         subscription_started_at: new Date().toISOString(),
-        subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        subscription_renewed_at: new Date().toISOString(),
+        subscription_expires_at: expiresAt,
         source: 'hubla',
-        hubla_subscription_id: subscription.id,
-        hubla_customer_id: customer.id,
-        warning_count: 0
+        hubla_subscription_id: subscriptionId,
+        hubla_customer_id: customerId,
+        warning_count: 0,
+        last_warning_sent_at: null,
+        blocked_at: null,
+        blocked_reason: null
       }, { onConflict: 'phone' });
 
-      await logEvent(phone, 'subscribed', { source: 'hubla', subscription_id: subscription.id });
+      if (error) console.error('[HUBLA] Erro upsert subscriber:', error.message);
+      else console.log(`[HUBLA] ✅ ${eventType}: ${phone} (${fullName}) ativo até ${expiresAt}`);
+
+      await logEvent(phone, eventType === 'subscription.created' ? 'subscribed' : 'activated', {
+        subscription_id: subscriptionId, plan: planName, expires_at: expiresAt
+      }, 'hubla');
     }
 
-    else if (eventType === 'subscription.renewed' || eventType === 'SubscriptionRenewed') {
-      // Renovacao
-      await supabase
+    // DESATIVAR (expirou ou foi desativada)
+    else if (eventType === 'subscription.deactivated') {
+      const { error } = await supabase
         .from('subscribers')
-        .update({
-          status: 'active',
-          subscription_renewed_at: new Date().toISOString(),
-          subscription_expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          warning_count: 0,
-          last_warning_sent_at: null
-        })
+        .update({ status: 'expired' })
         .eq('phone', phone);
 
-      await logEvent(phone, 'renewed', { source: 'hubla' });
+      if (error) console.error('[HUBLA] Erro desativando:', error.message);
+      else console.log(`[HUBLA] ⚠️  Desativado: ${phone}`);
+
+      await logEvent(phone, 'deactivated', { subscription_id: subscriptionId }, 'hubla');
     }
 
-    else if (eventType === 'subscription.canceled' || eventType === 'SubscriptionCanceled') {
-      // Cancelamento
-      await supabase
+    // EXPIRING (aviso preventivo, próximo de expirar)
+    else if (eventType === 'subscription.expiring') {
+      console.log(`[HUBLA] 🔔 Expirando em breve: ${phone}`);
+      await logEvent(phone, 'expiring_warning', { subscription_id: subscriptionId }, 'hubla');
+    }
+
+    // RENEWAL ENABLED (auto-renovação ativada)
+    else if (eventType === 'subscription.renewal_enabled') {
+      console.log(`[HUBLA] 🔄 Auto-renovacao ativada: ${phone}`);
+      await logEvent(phone, 'renewal_enabled', { subscription_id: subscriptionId }, 'hubla');
+    }
+
+    // RENEWAL DISABLED (auto-renovação desligada - sinal de potencial cancelamento)
+    else if (eventType === 'subscription.renewal_disabled') {
+      console.log(`[HUBLA] ⚠️  Auto-renovacao desativada: ${phone}`);
+      await logEvent(phone, 'renewal_disabled', { subscription_id: subscriptionId }, 'hubla');
+    }
+
+    // CANCELAMENTO (v1)
+    else if (eventType === 'CanceledSubscription' || eventType === 'subscription.canceled') {
+      const { error } = await supabase
         .from('subscribers')
         .update({ status: 'canceled' })
         .eq('phone', phone);
 
-      await logEvent(phone, 'canceled', { source: 'hubla' });
+      if (error) console.error('[HUBLA] Erro cancelando:', error.message);
+      else console.log(`[HUBLA] ❌ Cancelado: ${phone}`);
+
+      await supabase.from('cancellations').insert({
+        phone, email, canceled_at: new Date().toISOString()
+      });
+
+      await logEvent(phone, 'canceled', { subscription_id: subscriptionId }, 'hubla');
     }
 
-    else if (eventType === 'payment.failed' || eventType === 'PaymentFailed') {
-      await logEvent(phone, 'payment_failed', { source: 'hubla' });
+    // EVENTO DESCONHECIDO
+    else {
+      console.log(`[HUBLA] ❓ Evento nao mapeado: ${eventType}`);
+      await logEvent(phone, 'hubla_unknown_event', { eventType, payload }, 'hubla');
     }
 
   } catch (err) {
@@ -768,15 +651,13 @@ app.post('/webhook/hubla', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// ENDPOINTS DE DEBUG E ADMIN
+// DEBUG E STATS
 // ─────────────────────────────────────────
 app.get('/debug/:phone', async (req, res) => {
   const phone = req.params.phone;
   const subscriber = await findSubscriberByPhone(phone);
-
   res.json({
-    phone,
-    subscriber,
+    phone, subscriber,
     has_session: !!sessions[phone],
     session_messages: sessions[phone]?.length || 0,
     has_buffer: !!messageBuffers[phone],
@@ -788,24 +669,20 @@ app.get('/debug/:phone', async (req, res) => {
 
 app.post('/reset/:phone', (req, res) => {
   const phone = req.params.phone;
-  delete sessions[phone];
-  delete messageBuffers[phone];
-  delete userLogs[phone];
-  delete pendingEmailRequest[phone];
+  delete sessions[phone]; delete messageBuffers[phone];
+  delete userLogs[phone]; delete pendingEmailRequest[phone];
   res.json({ success: true });
 });
 
 app.get('/stats', async (req, res) => {
   const { data: dashStats } = await supabase
-    .from('v_dashboard_stats')
-    .select('*')
-    .single();
-
+    .from('v_dashboard_stats').select('*').single();
   res.json({
-    version: '8.0',
+    version: '8.1',
     enforcement_mode: ENFORCEMENT_MODE,
     metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN),
     supabaseConfigured: !!(SUPABASE_URL && SUPABASE_KEY),
+    hublaTokenConfigured: !!HUBLA_TOKEN,
     inMemoryUsers: Object.keys(sessions).length,
     activeBuffers: Object.keys(messageBuffers).length,
     pendingEmails: Object.keys(pendingEmailRequest).length,
@@ -813,9 +690,9 @@ app.get('/stats', async (req, res) => {
   });
 });
 
-app.get('/', (req, res) => res.send(`Agente Lucas v8 - mode=${ENFORCEMENT_MODE}`));
+app.get('/', (req, res) => res.send(`Agente Lucas v8.1 - mode=${ENFORCEMENT_MODE}`));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor v8 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
+  console.log(`Servidor v8.1 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
 });
