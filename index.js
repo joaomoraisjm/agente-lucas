@@ -18,7 +18,9 @@ const SUPABASE_KEY = process.env.SUPABASE_KEY;
 
 const ENFORCEMENT_MODE = process.env.ENFORCEMENT_MODE || 'observation';
 const RENEWAL_LINK = process.env.RENEWAL_LINK || 'https://pay.hubla.com.br/SEU_LINK';
-const HUBLA_TOKEN = process.env.HUBLA_TOKEN; // Token para validar autenticidade do webhook
+const HUBLA_TOKEN = process.env.HUBLA_TOKEN;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || null;
+const PUBLIC_URL = process.env.PUBLIC_URL || 'https://agente-lucas-production.up.railway.app'; // Token para validar autenticidade do webhook
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -1350,7 +1352,7 @@ if (token) {
 </html>
 `;
 
-console.log(`[INIT] Servidor v8.2 iniciando com MODE=${ENFORCEMENT_MODE}`);
+console.log(`[INIT] Servidor v8.3 iniciando com MODE=${ENFORCEMENT_MODE}`);
 
 // ─────────────────────────────────────────
 // SYSTEM PROMPT (mantido)
@@ -1476,6 +1478,62 @@ async function incrementMessageCount(phone) {
       last_message_at: new Date().toISOString()
     })
     .eq('phone', phone);
+}
+
+// ─────────────────────────────────────────
+// PERSISTENCIA DE CONVERSAS (Supabase)
+// Historico sobrevive a redeploys e e compartilhado entre canais
+// ─────────────────────────────────────────
+async function saveConversationMessage(phone, role, content, channel) {
+  try {
+    const text = typeof content === 'string' ? content : '[conteudo com imagem]';
+    if (!text || !text.trim()) return;
+    await supabase.from('conversations').insert({
+      phone, role, content: text.slice(0, 20000), channel: channel || 'whatsapp'
+    });
+  } catch (err) {
+    console.error('[CONV] Erro salvando mensagem:', err.message);
+  }
+}
+
+function sanitizeHistory(history) {
+  // Garante alternancia user/assistant exigida pela API
+  const out = [];
+  for (const m of history) {
+    if (out.length === 0 && m.role !== 'user') continue;
+    if (out.length > 0 && out[out.length - 1].role === m.role) {
+      const prev = out[out.length - 1];
+      if (typeof prev.content === 'string' && typeof m.content === 'string') {
+        prev.content += '\n\n' + m.content;
+      } else {
+        out[out.length - 1] = { role: m.role, content: m.content };
+      }
+    } else {
+      out.push({ role: m.role, content: m.content });
+    }
+  }
+  return out;
+}
+
+async function loadConversationHistory(phone) {
+  try {
+    const { data, error } = await supabase
+      .from('conversations')
+      .select('role, content')
+      .eq('phone', phone)
+      .order('created_at', { ascending: false })
+      .limit(MAX_HISTORY);
+    if (error || !data || data.length === 0) return [];
+    const chronological = data.reverse().map(m => ({ role: m.role, content: m.content }));
+    const clean = sanitizeHistory(chronological);
+    if (clean.length > 0) {
+      console.log(`[CONV] Historico restaurado do banco: ${phone} (${clean.length} msgs)`);
+    }
+    return clean;
+  } catch (err) {
+    console.error('[CONV] Erro carregando historico:', err.message);
+    return [];
+  }
 }
 
 // ─────────────────────────────────────────
@@ -1731,9 +1789,10 @@ async function processBuffered(phone) {
     userContent = combinedText;
   }
 
-  if (!sessions[phone]) sessions[phone] = [];
+  if (!sessions[phone]) sessions[phone] = await loadConversationHistory(phone);
   sessions[phone].push({ role: 'user', content: userContent });
   sessions[phone] = smartTruncate(sessions[phone]);
+  await saveConversationMessage(phone, 'user', (combinedText || '') + (images.length > 0 ? ' [imagem enviada]' : ''), 'whatsapp');
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -1747,7 +1806,7 @@ async function processBuffered(phone) {
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 500,
         system: [{ type: 'text', text: SYSTEM_PROMPT_TEXT, cache_control: { type: 'ephemeral' } }],
-        messages: sessions[phone]
+        messages: sanitizeHistory(sessions[phone])
       })
     });
     const data = await response.json();
@@ -1757,6 +1816,7 @@ async function processBuffered(phone) {
     }
     const reply = data.content?.[0]?.text || 'Desculpa, nao consegui processar.';
     sessions[phone].push({ role: 'assistant', content: reply });
+    await saveConversationMessage(phone, 'assistant', reply, 'whatsapp');
 
     if (data.usage) {
       const u = data.usage;
@@ -1981,6 +2041,167 @@ app.post('/webhook/hubla', async (req, res) => {
 // ─────────────────────────────────────────
 // DEBUG E STATS
 // ─────────────────────────────────────────
+// ─────────────────────────────────────────
+// TELEGRAM - Canal de backup
+// Contexto compartilhado com WhatsApp via tabela conversations
+// ─────────────────────────────────────────
+const pendingTelegramEmail = {};
+
+async function sendTelegramMessage(chatId, text) {
+  if (!TELEGRAM_BOT_TOKEN) return false;
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text })
+    });
+    const d = await r.json();
+    if (!d.ok) console.error('[TELEGRAM] Erro enviando:', d.description);
+    return d.ok;
+  } catch (err) {
+    console.error('[TELEGRAM] Erro sendMessage:', err.message);
+    return false;
+  }
+}
+
+async function findSubscriberByTelegram(chatId) {
+  const { data, error } = await supabase
+    .from('subscribers')
+    .select('*')
+    .eq('telegram_chat_id', String(chatId))
+    .maybeSingle();
+  if (error) return null;
+  return data;
+}
+
+app.post('/webhook/telegram', async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const msg = req.body?.message;
+    if (!msg || !msg.text) return;
+    const chatId = msg.chat.id;
+    const text = msg.text.trim();
+
+    console.log(`[TELEGRAM][${chatId}] Recebido: ${text.slice(0, 80)}`);
+
+    // Comando /start
+    if (text === '/start') {
+      pendingTelegramEmail[chatId] = Date.now();
+      await sendTelegramMessage(chatId,
+        'Opa! Aqui e o canal alternativo do Terapeuta 24 Horas. ' +
+        'Pra eu te identificar e continuar nossa conversa de onde paramos, ' +
+        'me manda o email que voce usou na assinatura.');
+      return;
+    }
+
+    // Identifica o assinante pelo chat_id
+    let subscriber = await findSubscriberByTelegram(chatId);
+
+    // Nao vinculado ainda: tenta identificar por email
+    if (!subscriber) {
+      const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      if (emailMatch) {
+        const found = await findSubscriberByEmail(emailMatch[0]);
+        if (found) {
+          await supabase.from('subscribers')
+            .update({ telegram_chat_id: String(chatId) })
+            .eq('phone', found.phone);
+          await logEvent(found.phone, 'telegram_linked', { chat_id: String(chatId) }, 'telegram');
+          delete pendingTelegramEmail[chatId];
+          const firstName = found.name ? found.name.split(' ')[0] : 'cara';
+          await sendTelegramMessage(chatId,
+            `Identifiquei voce, ${firstName}. Pode falar comigo por aqui normalmente. ` +
+            'Nossa conversa continua de onde paramos.');
+        } else {
+          await sendTelegramMessage(chatId,
+            `Nao encontrei assinatura com esse email. Confere se e o mesmo email da compra. ` +
+            `Se quiser assinar: ${RENEWAL_LINK}`);
+        }
+        return;
+      }
+      pendingTelegramEmail[chatId] = Date.now();
+      await sendTelegramMessage(chatId,
+        'Antes de continuar, preciso confirmar seu acesso. Qual o email que voce usou pra assinar?');
+      return;
+    }
+
+    const phone = subscriber.phone;
+
+    // Enforcement (mesma logica de modos do WhatsApp)
+    if (ENFORCEMENT_MODE === 'enforce_hard') {
+      if (subscriber.status === 'blocked' || subscriber.status === 'canceled') {
+        await sendTelegramMessage(chatId, `Seu acesso esta inativo. Pra reativar: ${RENEWAL_LINK}`);
+        return;
+      }
+      const expiresAt = subscriber.subscription_expires_at ? new Date(subscriber.subscription_expires_at) : null;
+      if (expiresAt && expiresAt < new Date() && subscriber.status === 'active') {
+        await sendTelegramMessage(chatId, `Sua assinatura venceu. Renova aqui: ${RENEWAL_LINK}`);
+        return;
+      }
+    } else if (ENFORCEMENT_MODE === 'observation') {
+      if (['blocked', 'canceled'].includes(subscriber.status)) {
+        await logEvent(phone, 'would_block', { reason: subscriber.status, mode: 'observation', channel: 'telegram' }, 'telegram');
+      }
+    }
+
+    // Historico compartilhado entre canais (indexado por phone)
+    if (!sessions[phone]) sessions[phone] = await loadConversationHistory(phone);
+    sessions[phone].push({ role: 'user', content: text });
+    sessions[phone] = smartTruncate(sessions[phone]);
+    await saveConversationMessage(phone, 'user', text, 'telegram');
+    await incrementMessageCount(phone);
+
+    // Claude
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        system: [{ type: 'text', text: SYSTEM_PROMPT_TEXT, cache_control: { type: 'ephemeral' } }],
+        messages: sanitizeHistory(sessions[phone])
+      })
+    });
+    const data = await response.json();
+    if (data.error) {
+      console.error('[TELEGRAM] Erro Claude:', data.error);
+      await sendTelegramMessage(chatId, 'Po, deu um problema tecnico aqui. Pode reenviar?');
+      return;
+    }
+    const reply = data.content?.[0]?.text || 'Desculpa, nao consegui processar.';
+    sessions[phone].push({ role: 'assistant', content: reply });
+    await saveConversationMessage(phone, 'assistant', reply, 'telegram');
+
+    if (data.usage) {
+      const u = data.usage;
+      const cost = (u.input_tokens / 1e6) * 1 + ((u.cache_read_input_tokens || 0) / 1e6) * 0.10 + (u.output_tokens / 1e6) * 5;
+      console.log(`[TELEGRAM][${phone}] in=${u.input_tokens} out=${u.output_tokens} custo=${cost.toFixed(5)}`);
+    }
+
+    await sendTelegramMessage(chatId, reply);
+  } catch (err) {
+    console.error('[TELEGRAM] Erro webhook:', err);
+  }
+});
+
+// Registra webhook do Telegram automaticamente no boot
+if (TELEGRAM_BOT_TOKEN) {
+  fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: `${PUBLIC_URL}/webhook/telegram`, allowed_updates: ['message'] })
+  })
+    .then(r => r.json())
+    .then(d => console.log('[TELEGRAM] setWebhook:', d.ok ? 'OK' : d.description))
+    .catch(err => console.error('[TELEGRAM] Erro setWebhook:', err.message));
+} else {
+  console.log('[TELEGRAM] TELEGRAM_BOT_TOKEN nao configurado - canal desativado');
+}
+
 app.get('/debug/:phone', async (req, res) => {
   const phone = req.params.phone;
   const subscriber = await findSubscriberByPhone(phone);
@@ -2006,11 +2227,13 @@ app.get('/stats', async (req, res) => {
   const { data: dashStats } = await supabase
     .from('v_dashboard_stats').select('*').single();
   res.json({
-    version: '8.1',
+    version: '8.3',
     enforcement_mode: ENFORCEMENT_MODE,
     metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN),
     supabaseConfigured: !!(SUPABASE_URL && SUPABASE_KEY),
     hublaTokenConfigured: !!HUBLA_TOKEN,
+    telegramConfigured: !!TELEGRAM_BOT_TOKEN,
+    persistentConversations: true,
     inMemoryUsers: Object.keys(sessions).length,
     activeBuffers: Object.keys(messageBuffers).length,
     pendingEmails: Object.keys(pendingEmailRequest).length,
@@ -2372,9 +2595,9 @@ app.get('/admin/api/events', requireAuth, async (req, res) => {
 console.log('[INIT] Dashboard routes ativas em /admin');
 
 
-app.get('/', (req, res) => res.send(`Agente Lucas v8.2 - mode=${ENFORCEMENT_MODE}`));
+app.get('/', (req, res) => res.send(`Agente Lucas v8.3 - mode=${ENFORCEMENT_MODE}`));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor v8.2 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
+  console.log(`Servidor v8.3 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
 });
