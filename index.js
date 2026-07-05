@@ -1352,7 +1352,7 @@ if (token) {
 </html>
 `;
 
-console.log(`[INIT] Servidor v8.3 iniciando com MODE=${ENFORCEMENT_MODE}`);
+console.log(`[INIT] Servidor v8.4 iniciando com MODE=${ENFORCEMENT_MODE}`);
 
 // ─────────────────────────────────────────
 // SYSTEM PROMPT (mantido)
@@ -2043,8 +2043,11 @@ app.post('/webhook/hubla', async (req, res) => {
 // ─────────────────────────────────────────
 // ─────────────────────────────────────────
 // TELEGRAM - Canal de backup
-// Contexto compartilhado com WhatsApp via tabela conversations
+// TELEGRAM_OPEN_ACCESS=true -> acesso liberado sem identificacao (modo emergencia)
+// Nao identificados usam chave provisoria tg_<chatid>; ao informarem email valido,
+// o historico provisorio e migrado para o cadastro do assinante.
 // ─────────────────────────────────────────
+const TELEGRAM_OPEN_ACCESS = String(process.env.TELEGRAM_OPEN_ACCESS || 'false').toLowerCase() === 'true';
 const pendingTelegramEmail = {};
 
 async function sendTelegramMessage(chatId, text) {
@@ -2074,6 +2077,22 @@ async function findSubscriberByTelegram(chatId) {
   return data;
 }
 
+async function migrateTelegramHistory(chatId, phone) {
+  try {
+    const { error } = await supabase
+      .from('conversations')
+      .update({ phone })
+      .eq('phone', 'tg_' + chatId);
+    if (!error) {
+      // limpa sessao provisoria em memoria para forcar reload unificado
+      delete sessions['tg_' + chatId];
+      console.log(`[TELEGRAM] Historico tg_${chatId} migrado para ${phone}`);
+    }
+  } catch (err) {
+    console.error('[TELEGRAM] Erro migrando historico:', err.message);
+  }
+}
+
 app.post('/webhook/telegram', async (req, res) => {
   res.sendStatus(200);
   try {
@@ -2082,22 +2101,32 @@ app.post('/webhook/telegram', async (req, res) => {
     const chatId = msg.chat.id;
     const text = msg.text.trim();
 
-    console.log(`[TELEGRAM][${chatId}] Recebido: ${text.slice(0, 80)}`);
+    console.log(`[TELEGRAM][${chatId}] Recebido: ${text.slice(0, 80)} | open_access=${TELEGRAM_OPEN_ACCESS}`);
+
+    let subscriber = await findSubscriberByTelegram(chatId);
 
     // Comando /start
     if (text === '/start') {
-      pendingTelegramEmail[chatId] = Date.now();
-      await sendTelegramMessage(chatId,
-        'Opa! Aqui e o canal alternativo do Terapeuta 24 Horas. ' +
-        'Pra eu te identificar e continuar nossa conversa de onde paramos, ' +
-        'me manda o email que voce usou na assinatura.');
+      if (subscriber) {
+        const nome = subscriber.name ? ', ' + subscriber.name.split(' ')[0] : '';
+        await sendTelegramMessage(chatId,
+          `Opa${nome}! Bom te ver por aqui. Pode falar comigo normalmente, nossa conversa continua de onde paramos.`);
+      } else if (TELEGRAM_OPEN_ACCESS) {
+        await sendTelegramMessage(chatId,
+          'Opa! Aqui e o Terapeuta 24 Horas no Telegram. Pode falar comigo normalmente. ' +
+          'Se voce ja e assinante e conversava comigo no WhatsApp, me manda o email da sua assinatura ' +
+          'a qualquer momento que eu recupero nosso historico.');
+      } else {
+        pendingTelegramEmail[chatId] = Date.now();
+        await sendTelegramMessage(chatId,
+          'Opa! Aqui e o canal alternativo do Terapeuta 24 Horas. ' +
+          'Pra eu te identificar e continuar nossa conversa de onde paramos, ' +
+          'me manda o email que voce usou na assinatura.');
+      }
       return;
     }
 
-    // Identifica o assinante pelo chat_id
-    let subscriber = await findSubscriberByTelegram(chatId);
-
-    // Nao vinculado ainda: tenta identificar por email
+    // Tentativa de vinculo por email (sempre disponivel; obrigatoria so no modo fechado)
     if (!subscriber) {
       const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
       if (emailMatch) {
@@ -2106,50 +2135,59 @@ app.post('/webhook/telegram', async (req, res) => {
           await supabase.from('subscribers')
             .update({ telegram_chat_id: String(chatId) })
             .eq('phone', found.phone);
+          await migrateTelegramHistory(chatId, found.phone);
           await logEvent(found.phone, 'telegram_linked', { chat_id: String(chatId) }, 'telegram');
           delete pendingTelegramEmail[chatId];
           const firstName = found.name ? found.name.split(' ')[0] : 'cara';
           await sendTelegramMessage(chatId,
             `Identifiquei voce, ${firstName}. Pode falar comigo por aqui normalmente. ` +
             'Nossa conversa continua de onde paramos.');
-        } else {
+          return;
+        }
+        if (!TELEGRAM_OPEN_ACCESS) {
           await sendTelegramMessage(chatId,
             `Nao encontrei assinatura com esse email. Confere se e o mesmo email da compra. ` +
             `Se quiser assinar: ${RENEWAL_LINK}`);
+          return;
         }
+        // Open access: email nao encontrado -> registra e segue a conversa normalmente
+        await logEvent('tg_' + chatId, 'telegram_email_not_found', { email: emailMatch[0] }, 'telegram');
+      } else if (!TELEGRAM_OPEN_ACCESS) {
+        pendingTelegramEmail[chatId] = Date.now();
+        await sendTelegramMessage(chatId,
+          'Antes de continuar, preciso confirmar seu acesso. Qual o email que voce usou pra assinar?');
         return;
-      }
-      pendingTelegramEmail[chatId] = Date.now();
-      await sendTelegramMessage(chatId,
-        'Antes de continuar, preciso confirmar seu acesso. Qual o email que voce usou pra assinar?');
-      return;
-    }
-
-    const phone = subscriber.phone;
-
-    // Enforcement (mesma logica de modos do WhatsApp)
-    if (ENFORCEMENT_MODE === 'enforce_hard') {
-      if (subscriber.status === 'blocked' || subscriber.status === 'canceled') {
-        await sendTelegramMessage(chatId, `Seu acesso esta inativo. Pra reativar: ${RENEWAL_LINK}`);
-        return;
-      }
-      const expiresAt = subscriber.subscription_expires_at ? new Date(subscriber.subscription_expires_at) : null;
-      if (expiresAt && expiresAt < new Date() && subscriber.status === 'active') {
-        await sendTelegramMessage(chatId, `Sua assinatura venceu. Renova aqui: ${RENEWAL_LINK}`);
-        return;
-      }
-    } else if (ENFORCEMENT_MODE === 'observation') {
-      if (['blocked', 'canceled'].includes(subscriber.status)) {
-        await logEvent(phone, 'would_block', { reason: subscriber.status, mode: 'observation', channel: 'telegram' }, 'telegram');
       }
     }
 
-    // Historico compartilhado entre canais (indexado por phone)
+    // Chave de contexto: telefone real (identificado) ou provisoria (open access)
+    const phone = subscriber ? subscriber.phone : ('tg_' + chatId);
+
+    // Enforcement so se aplica a identificados
+    if (subscriber) {
+      if (ENFORCEMENT_MODE === 'enforce_hard') {
+        if (subscriber.status === 'blocked' || subscriber.status === 'canceled') {
+          await sendTelegramMessage(chatId, `Seu acesso esta inativo. Pra reativar: ${RENEWAL_LINK}`);
+          return;
+        }
+        const expiresAt = subscriber.subscription_expires_at ? new Date(subscriber.subscription_expires_at) : null;
+        if (expiresAt && expiresAt < new Date() && subscriber.status === 'active') {
+          await sendTelegramMessage(chatId, `Sua assinatura venceu. Renova aqui: ${RENEWAL_LINK}`);
+          return;
+        }
+      } else if (ENFORCEMENT_MODE === 'observation') {
+        if (['blocked', 'canceled'].includes(subscriber.status)) {
+          await logEvent(phone, 'would_block', { reason: subscriber.status, mode: 'observation', channel: 'telegram' }, 'telegram');
+        }
+      }
+    }
+
+    // Historico compartilhado (indexado pela chave de contexto)
     if (!sessions[phone]) sessions[phone] = await loadConversationHistory(phone);
     sessions[phone].push({ role: 'user', content: text });
     sessions[phone] = smartTruncate(sessions[phone]);
     await saveConversationMessage(phone, 'user', text, 'telegram');
-    await incrementMessageCount(phone);
+    if (subscriber) await incrementMessageCount(phone);
 
     // Claude
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -2179,7 +2217,7 @@ app.post('/webhook/telegram', async (req, res) => {
     if (data.usage) {
       const u = data.usage;
       const cost = (u.input_tokens / 1e6) * 1 + ((u.cache_read_input_tokens || 0) / 1e6) * 0.10 + (u.output_tokens / 1e6) * 5;
-      console.log(`[TELEGRAM][${phone}] in=${u.input_tokens} out=${u.output_tokens} custo=${cost.toFixed(5)}`);
+      console.log(`[TELEGRAM][${phone}] in=${u.input_tokens} out=${u.output_tokens} custo=$${cost.toFixed(5)}`);
     }
 
     await sendTelegramMessage(chatId, reply);
@@ -2227,12 +2265,13 @@ app.get('/stats', async (req, res) => {
   const { data: dashStats } = await supabase
     .from('v_dashboard_stats').select('*').single();
   res.json({
-    version: '8.3',
+    version: '8.4',
     enforcement_mode: ENFORCEMENT_MODE,
     metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN),
     supabaseConfigured: !!(SUPABASE_URL && SUPABASE_KEY),
     hublaTokenConfigured: !!HUBLA_TOKEN,
     telegramConfigured: !!TELEGRAM_BOT_TOKEN,
+    telegramOpenAccess: TELEGRAM_OPEN_ACCESS,
     persistentConversations: true,
     inMemoryUsers: Object.keys(sessions).length,
     activeBuffers: Object.keys(messageBuffers).length,
@@ -2595,9 +2634,9 @@ app.get('/admin/api/events', requireAuth, async (req, res) => {
 console.log('[INIT] Dashboard routes ativas em /admin');
 
 
-app.get('/', (req, res) => res.send(`Agente Lucas v8.3 - mode=${ENFORCEMENT_MODE}`));
+app.get('/', (req, res) => res.send(`Agente Lucas v8.4 - mode=${ENFORCEMENT_MODE}`));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor v8.3 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
+  console.log(`Servidor v8.4 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
 });
