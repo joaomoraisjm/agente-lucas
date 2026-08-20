@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// AGENTE LUCAS KRAUSCHE - SERVIDOR v8.1
-// Webhook Hubla 100% mapeado (todos eventos)
+// AGENTE LUCAS KRAUSCHE - SERVIDOR v8.6
+// v8.5 + Base de conhecimento CDR no prompt (FULL_SYSTEM_PROMPT)
 // ═══════════════════════════════════════════════════════════════
 
 const express = require('express');
@@ -1352,10 +1352,10 @@ if (token) {
 </html>
 `;
 
-console.log(`[INIT] Servidor v8.5 iniciando com MODE=${ENFORCEMENT_MODE}`);
+console.log(`[INIT] Servidor v8.6 iniciando com MODE=${ENFORCEMENT_MODE}`);
 
 // ─────────────────────────────────────────
-// SYSTEM PROMPT (mantido)
+// SYSTEM PROMPT (persona - mantido da v8.5)
 // ─────────────────────────────────────────
 const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos e crises conjugais. Voce atende TODOS os assinantes com a mesma profundidade e dedicacao: homens e mulheres.
 
@@ -1410,6 +1410,45 @@ ANALISE DE IMAGENS: Confirma, analisa microssinais (tom, emoji, tamanho), orient
 ENCAMINHAMENTO MENTORIA: Casos graves (suicidio, violencia, vicios) -> mentoria 1:1 com Lucas. Em ideacao suicida: CVV 188.
 
 ENGAJAMENTO: Sempre termine com algo que provoca retorno. Seja especifico.`;
+
+// ─────────────────────────────────────────
+// CONHECIMENTO DE PRODUTO: CDR (v8.6)
+// Editar conteudo do curso AQUI, sem mexer na persona acima
+// ─────────────────────────────────────────
+const CDR_KNOWLEDGE = `
+CONHECIMENTO DO PRODUTO: CODIGO DA RECONQUISTA (CDR)
+Voce criou o CDR, seu produto de entrada com aulas em video + ebooks sobre reconquista. Muitos assinantes do Terapeuta 24h sao alunos do CDR. Use este conhecimento quando o assinante mencionar o curso, as aulas, tecnicas do metodo, ou estiver em processo de reconquista.
+
+METODO CDR EM 3 FASES: Reaproximacao > Reconexao > Reconciliacao.
+Essas fases sao a aplicacao pratica dos seus 3 pilares: a escassez emocional do CDR e o Distanciamento Estrategico; o upgrade de visual, status e mentalidade e a Evolucao Visivel.
+
+ESTRUTURA DO CURSO:
+- Modulo 1 (Boas-vindas): video de boas-vindas, formulario de diagnostico (preencher libera um presente), comunidade de avisos.
+- Modulo 2 (aulas principais):
+  Aula 1 Desvendando a Mente Feminina: termino nunca e do nada, e acumulo de pequenas decepcoes. Motivos principais: falta de comunicacao, falta de atencao, rotina, ciume excessivo, financas, traicao. 7 etapas do processo interno da mulher antes do termino (pode durar de 1 a 5 anos). Exercicio: comparar quem era o homem que conquistou vs quem se tornou.
+  Aula 2 O Que Fazer e Nao Fazer: erros de 97% dos homens (promessas vazias, implorar, excesso de mensagens, presentes e surpresas, envolver terceiros, stalkear, provocar ciume do jeito errado). O que fazer: reduzir ou cortar contato, upgrade no visual, posts estrategicos, fortalecer status social, evolucao mental, independencia emocional.
+  Aula 3 Botao da Saudade: ativar memorias positivas de forma indireta (lugares especiais, fotos, perfume, musicas, frases marcantes, livros) por dois canais: stories estrategicos e pessoas em comum.
+  Aula 4 SMS de 3 Palavras (Gatilho do Perdao): a primeira mensagem de reabertura. 3 criterios: curta, emocao positiva ou neutra (nunca dor), sem pedir nada. Mandou uma, nao insiste e nao cobra resposta. Quem encerra a conversa por cima controla o jogo.
+  Aula 5 Stories da Saudade (Instinto da Perda): o story e o canal mais forte, funciona mesmo bloqueado no WhatsApp. 3 tipos alternados: abundancia e prova social, transformacao, nostalgia indireta (musica, lugar, referencia sem legenda). Regra: transmitir homem em paz evoluindo, nunca homem destruido. NUNCA criar perfil fake nem furar bloqueio. Nunca postar indireta triste, vitimizacao ou cobranca de visualizacao.
+  Aula 6 Mensagem da Recaida (frase de 6 palavras): so funciona depois que Replay e Stories prepararam o terreno. Gatilhos: loop aberto, memoria especifica, calor com dignidade, provocacao confiante. Depois de reabrir: manter leve, conduzir pro mundo real (cafe rapido, ligacao) e encerrar por cima.
+  Aula 7 Reaproximacao: quando ela voltar a procurar, nao responder na hora, mostrar vida ativa. Nao falar do relacionamento nem pedir desculpas no inicio. Conversas leves, encerrar no auge, cocriar futuro atraves de perguntas. Demonstrar por atitudes que o motivo do termino nao se repete.
+  Aula 8 A Ultima Carta (liberada apos 7 dias): carta de fechamento de ciclo em 6 atos na estrutura da Jornada do Heroi. Sentimento central: eu finalmente entendi. Maturidade e responsabilidade, nunca suplica. Enviar uma unica vez e silencio. So enviar se a transformacao for real.
+  Aula 9 Presente Surpresa: oferta da sua mentoria individual de 1h (diagnostico completo do caso + direcionamento). Valor cheio R$3000; condicao especial para quem concluiu o curso: R$497, no Pix ou em ate 12x de aproximadamente R$50. Vagas limitadas.
+- Modulo 3 Biblioteca de Mensagens da Reconquista: 100+ mensagens prontas por cenario (primeira mensagem pos-termino, reaproximacao, resposta fria, quando ela ignora, quando ela esta com outro, mensagens de atracao).
+- Modulo 4 Instagram Magnetico: ebook de otimizacao de perfil (foto, bio, destaques, fotos de valor social).
+- Modulo 5 WhatsApp da Reconquista: ebook com frases divididas por cenario.
+- Modulo 6 Bonus (Protocolos da Reconquista): Frequencia da Reconquista (cronograma completo com aulas em audio por dia), Audios do Subconsciente, Efeito Replay (gatilho de memoria emocional validado por 8000+ alunos).
+
+COMO USAR ESTE CONHECIMENTO:
+- Oriente o aluno dentro do metodo e indique em qual aula ou modulo esta o aprofundamento (ex: isso ta detalhado na aula do Botao da Saudade, da uma revisada la; as frases prontas estao no Modulo 3).
+- Reforce sempre os principios do metodo: dignidade, calma, nao insistir, encerrar por cima.
+- NUNCA oriente furar bloqueio, criar perfil fake, vigiar, perseguir ou insistir apos recusa clara. O proprio metodo proibe. Se a ex deixou claro que nao quer contato, o caminho e Evolucao Visivel e seguir a propria vida.
+- Nunca prometa resultado garantido de reconquista. O metodo aumenta as chances; cada caso e unico.
+- Assinantes mulheres: o metodo vale integralmente, adapte os exemplos (stories, mensagens e evolucao visivel funcionam igual).
+- Caso complexo pedindo direcionamento individual: mencione com naturalidade a mentoria da Aula 9, sem pressao.
+- Duvida de acesso, login, ou material que nao abre: direcione pro suporte no WhatsApp, nao tente resolver tecnicamente.`;
+
+const FULL_SYSTEM_PROMPT = SYSTEM_PROMPT_TEXT + '\n' + CDR_KNOWLEDGE;
 
 // ─────────────────────────────────────────
 // SUPABASE HELPERS
@@ -1819,7 +1858,7 @@ async function processBuffered(phone) {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 500,
-        system: [{ type: 'text', text: SYSTEM_PROMPT_TEXT, cache_control: { type: 'ephemeral' } }],
+        system: [{ type: 'text', text: FULL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: sanitizeHistory(sessions[phone])
       })
     });
@@ -1906,7 +1945,7 @@ app.post('/webhook/meta', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// WEBHOOK HUBLA - v8.1 com TODOS eventos mapeados
+// WEBHOOK HUBLA - todos eventos mapeados
 // ─────────────────────────────────────────
 app.post('/webhook/hubla', async (req, res) => {
   res.sendStatus(200);
@@ -2052,9 +2091,6 @@ app.post('/webhook/hubla', async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────
-// DEBUG E STATS
-// ─────────────────────────────────────────
 // ─────────────────────────────────────────
 // TELEGRAM - Canal de backup
 // TELEGRAM_OPEN_ACCESS=true -> acesso liberado sem identificacao (modo emergencia)
@@ -2214,7 +2250,7 @@ app.post('/webhook/telegram', async (req, res) => {
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 500,
-        system: [{ type: 'text', text: SYSTEM_PROMPT_TEXT, cache_control: { type: 'ephemeral' } }],
+        system: [{ type: 'text', text: FULL_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
         messages: sanitizeHistory(sessions[phone])
       })
     });
@@ -2279,7 +2315,7 @@ app.get('/stats', async (req, res) => {
   const { data: dashStats } = await supabase
     .from('v_dashboard_stats').select('*').single();
   res.json({
-    version: '8.5',
+    version: '8.6',
     enforcement_mode: ENFORCEMENT_MODE,
     metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN),
     supabaseConfigured: !!(SUPABASE_URL && SUPABASE_KEY),
@@ -2287,6 +2323,7 @@ app.get('/stats', async (req, res) => {
     telegramConfigured: !!TELEGRAM_BOT_TOKEN,
     telegramOpenAccess: TELEGRAM_OPEN_ACCESS,
     persistentConversations: true,
+    cdrKnowledge: true,
     inMemoryUsers: Object.keys(sessions).length,
     activeBuffers: Object.keys(messageBuffers).length,
     pendingEmails: Object.keys(pendingEmailRequest).length,
@@ -2296,8 +2333,7 @@ app.get('/stats', async (req, res) => {
 
 
 // ═══════════════════════════════════════════════════════════════
-// DASHBOARD ROUTES - Adicionar ao servidor v8.1
-// Coloque ANTES do "app.get('/', ...)" no index.js
+// DASHBOARD ROUTES
 // ═══════════════════════════════════════════════════════════════
 
 const crypto = require('crypto');
@@ -2648,9 +2684,9 @@ app.get('/admin/api/events', requireAuth, async (req, res) => {
 console.log('[INIT] Dashboard routes ativas em /admin');
 
 
-app.get('/', (req, res) => res.send(`Agente Lucas v8.5 - mode=${ENFORCEMENT_MODE}`));
+app.get('/', (req, res) => res.send(`Agente Lucas v8.6 - mode=${ENFORCEMENT_MODE}`));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor v8.5 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
+  console.log(`Servidor v8.6 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
 });
