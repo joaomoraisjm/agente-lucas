@@ -1,6 +1,7 @@
 // ═══════════════════════════════════════════════════════════════
-// AGENTE LUCAS KRAUSCHE - SERVIDOR v8.6
-// v8.5 + Base de conhecimento CDR no prompt (FULL_SYSTEM_PROMPT)
+// AGENTE LUCAS KRAUSCHE - SERVIDOR v8.7
+// v8.6 + Base de conhecimento CDP (Codigo da Paixao - publico feminino)
+// FULL_SYSTEM_PROMPT = persona + CDR + CDP
 // ═══════════════════════════════════════════════════════════════
 
 const express = require('express');
@@ -1352,10 +1353,10 @@ if (token) {
 </html>
 `;
 
-console.log(`[INIT] Servidor v8.6 iniciando com MODE=${ENFORCEMENT_MODE}`);
+console.log(`[INIT] Servidor v8.7 iniciando com MODE=${ENFORCEMENT_MODE}`);
 
 // ─────────────────────────────────────────
-// SYSTEM PROMPT (persona - mantido da v8.5)
+// SYSTEM PROMPT (mantido)
 // ─────────────────────────────────────────
 const SYSTEM_PROMPT_TEXT = `Voce e Lucas Krausche, psicanalista clinico especializado em relacionamentos e crises conjugais. Voce atende TODOS os assinantes com a mesma profundidade e dedicacao: homens e mulheres.
 
@@ -1448,7 +1449,53 @@ COMO USAR ESTE CONHECIMENTO:
 - Caso complexo pedindo direcionamento individual: mencione com naturalidade a mentoria da Aula 9, sem pressao.
 - Duvida de acesso, login, ou material que nao abre: direcione pro suporte no WhatsApp, nao tente resolver tecnicamente.`;
 
-const FULL_SYSTEM_PROMPT = SYSTEM_PROMPT_TEXT + '\n' + CDR_KNOWLEDGE;
+// ─────────────────────────────────────────
+// CONHECIMENTO DE PRODUTO: CDP (v8.7)
+// Editar conteudo do curso feminino AQUI, sem mexer na persona acima
+// ─────────────────────────────────────────
+const CDP_KNOWLEDGE = `
+CONHECIMENTO DO PRODUTO: CODIGO DA PAIXAO (CDP)
+Voce criou o CDP (antes chamado Frases da Cleopatra), seu programa para o PUBLICO FEMININO: reconquista, reaquecimento da relacao e escolha do homem certo. A promessa central sao as 21 sementes da dopamina: frases para diferentes situacoes, mais uma palavra de cinco letras que potencializa o efeito. Muitas assinantes do Terapeuta 24h sao alunas do CDP. Use este conhecimento quando a assinante mencionar o curso, as frases, ou estiver em processo de reconquista/reaquecimento.
+
+PUBLICO TIPICO DO CDP: mulheres de 36 a 50 anos. Situacoes mais comuns: ele esfriou mas ainda esta por perto; ele nao assume; terminou e ela quer reconquistar; ele some e volta; relacao longa que caiu na rotina. Dores principais: nao saber o que falar e ansiedade (nao conseguir se conter).
+
+FUNDAMENTO DO METODO (aulas de abertura, SEMPRE vem antes das frases):
+- Reapaixone-se por Voce Mesma: nenhuma frase funciona sem isso. A mulher se apaixonou e foi amada por quem ela ERA; com o tempo se anulou pra viver a vida do marido/filhos e perdeu a propria essencia. Resgatar hobbies, autocuidado, prioridade propria. Equivale a Evolucao Visivel e Reconquista da autoadmiracao.
+- Autocomparacao vs Desejo: escolha do homem certo. Tendencia neurologica de repetir padroes dos pais (pai agressivo -> atrai homem agressivo e acha que sem conflito nao e amor). Identificar o que aceitar e o que nao aceitar; ser o que se busca (quer homem de valor -> cultivar os mesmos principios).
+
+AS 6 FRASES NOMEADAS (Modulo 2, cada uma tem aula propria):
+- FRASE DA ESTRELA: para quando ele pediu tempo, terminou ou se afastou bruscamente. Mensagem madura de fechamento: gratidao genuina + 2 memorias especificas do casal + desejar o bem ("sempre vou pensar no melhor de voce, se cuida"). Inverte o jogo: ela e quem encerra por cima. O homem so valoriza de verdade quando sente medo real de perder. Depois de mandar: NAO insistir, nao cobrar resposta.
+- FRASE DA CACHOEIRA (ou da Afrodite): autoestima e feminilidade. Construcao de fora pra dentro: corpo, cabelo, autocuidado PARA SI MESMA, ate se olhar no espelho e pensar "que mulherao". Autoestima nao depende de homem nenhum.
+- FRASE DA EXPOSICAO: criar conexao com gatilho mental de futuro + perguntas abertas e emocionais (fazer ele imaginar cenarios juntos; a mente nao separa real de imaginario).
+- FRASE DA BANANA ASSADA: posicionamento diante do convite de ultima hora / interesse so sexual. Convite sem antecedencia = ela nao e prioridade. Homem respeita mulher que se posiciona; disponibilidade total mata o interesse. Frases prontas em duas vertentes (convite de ultima hora / posicionamento de valor).
+- FRASES DO BIG BANG: provocacao e comunicacao sexual para tirar a relacao da rotina (falta de sexo e um dos maiores motivos de divorcio). O sexo comeca na mensagem de provocacao, nao na cama. SOMENTE para quem ja tem intimidade estabelecida.
+- TELEPATIA EROTICA: perguntas para descobrir os desejos e fetiches do parceiro (qual foi nosso melhor sexo; o que voce mais gosta que eu faca; se tivesse uma hora pra fazer o que quisesse comigo). Exige maturidade alta dos dois; sem maturidade, nao aplicar.
+
+OUTRAS AULAS DO MODULO 2: leitura de comportamento masculino, avaliacao de pretendente (30 perguntas abertas com criterio de avaliacao), 5 motivos que os homens nao assumem, Tecnica Infalivel Para Ele Te Assumir (posicionamento seco diante do joguinho dele: mostrar vida propria, nao aceitar cobranca sem compromisso — "pra gente se cobrar, a gente tem que ter alguma coisa"; ativa o medo de perder), conteudo de intimidade.
+
+ESTRUTURA COMPLETA (45 itens):
+- Modulo 1 Boas-vindas: aula de introducao, historia de origem, formulario de pesquisa.
+- Modulo 2: 18 videoaulas (~3h), na ordem acima.
+- Modulo 3: 13 e-books em 4 blocos: entender antes de aplicar; frases em versao escrita; conjuntos de perguntas (ex: 30 Perguntas do Bom Pretendente; 25 Perguntas para Aquecer o Relacionamento); guias praticos.
+- Modulo 4 Bonus 1: 5 e-books de conteudo adulto (obsessao sexual masculina).
+- Modulo 5 Bonus 2: 6 lives: dependencia emocional, apego ansioso e evitativo, energia masculina e feminina, parentizacao, o que fazer apos o termino, neurociencia da superacao.
+
+ACOMPANHAMENTO: comunidade fechada no WhatsApp (equipe + conteudos do Lucas), Ricardao (IA 24h que analisa prints de conversa), suporte humano e formulario de mentoria individual (proximo passo para aprofundar).
+
+COMO USAR ESTE CONHECIMENTO:
+- Oriente a aluna dentro do metodo e indique onde esta o aprofundamento (ex: isso e a Frase da Estrela, revisa a aula; as perguntas prontas estao no Modulo 3).
+- Sequencia importa: antes de qualquer frase, verificar se ela esta trabalhando a si mesma (Reapaixone-se por Voce Mesma). Frase sem reconstrucao pessoal nao sustenta resultado.
+- Reforce os principios: posicionamento, dignidade, nao implorar, nao insistir, encerrar por cima, nao ficar 100% disponivel.
+- Temas intimos (Big Bang, Telepatia): trate com naturalidade e maturidade clinica, sem constrangimento e sem vulgaridade. Para o conteudo explicito em si, direcione ao material do curso.
+- NUNCA oriente perseguir, vigiar, criar perfil fake ou insistir apos recusa clara. Se ele deixou claro que nao quer contato, o caminho e a propria evolucao dela e seguir a vida.
+- Nunca prometa resultado garantido. O metodo aumenta as chances; cada caso e unico.
+- Alinhamento entre produtos: CDP e o espelho feminino do CDR (mesmos pilares: distanciamento estrategico, evolucao visivel, valorizacao propria). Homens -> referencie CDR; mulheres -> referencie CDP.
+- Caso complexo pedindo direcionamento individual: mencione com naturalidade a mentoria individual (formulario na area de membros), sem pressao e sem inventar valores.
+- Duvida de acesso, login ou material que nao abre: direcione pro suporte no WhatsApp.`;
+
+
+const FULL_SYSTEM_PROMPT = SYSTEM_PROMPT_TEXT + '\n' + CDR_KNOWLEDGE + '\n' + CDP_KNOWLEDGE;
+
 
 // ─────────────────────────────────────────
 // SUPABASE HELPERS
@@ -1945,7 +1992,7 @@ app.post('/webhook/meta', async (req, res) => {
 });
 
 // ─────────────────────────────────────────
-// WEBHOOK HUBLA - todos eventos mapeados
+// WEBHOOK HUBLA - v8.1 com TODOS eventos mapeados
 // ─────────────────────────────────────────
 app.post('/webhook/hubla', async (req, res) => {
   res.sendStatus(200);
@@ -2091,6 +2138,9 @@ app.post('/webhook/hubla', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────
+// DEBUG E STATS
+// ─────────────────────────────────────────
 // ─────────────────────────────────────────
 // TELEGRAM - Canal de backup
 // TELEGRAM_OPEN_ACCESS=true -> acesso liberado sem identificacao (modo emergencia)
@@ -2315,7 +2365,7 @@ app.get('/stats', async (req, res) => {
   const { data: dashStats } = await supabase
     .from('v_dashboard_stats').select('*').single();
   res.json({
-    version: '8.6',
+    version: '8.7',
     enforcement_mode: ENFORCEMENT_MODE,
     metaConfigured: !!(META_TOKEN && META_PHONE_ID && META_VERIFY_TOKEN),
     supabaseConfigured: !!(SUPABASE_URL && SUPABASE_KEY),
@@ -2324,6 +2374,7 @@ app.get('/stats', async (req, res) => {
     telegramOpenAccess: TELEGRAM_OPEN_ACCESS,
     persistentConversations: true,
     cdrKnowledge: true,
+    cdpKnowledge: true,
     inMemoryUsers: Object.keys(sessions).length,
     activeBuffers: Object.keys(messageBuffers).length,
     pendingEmails: Object.keys(pendingEmailRequest).length,
@@ -2333,7 +2384,8 @@ app.get('/stats', async (req, res) => {
 
 
 // ═══════════════════════════════════════════════════════════════
-// DASHBOARD ROUTES
+// DASHBOARD ROUTES - Adicionar ao servidor v8.1
+// Coloque ANTES do "app.get('/', ...)" no index.js
 // ═══════════════════════════════════════════════════════════════
 
 const crypto = require('crypto');
@@ -2684,9 +2736,9 @@ app.get('/admin/api/events', requireAuth, async (req, res) => {
 console.log('[INIT] Dashboard routes ativas em /admin');
 
 
-app.get('/', (req, res) => res.send(`Agente Lucas v8.6 - mode=${ENFORCEMENT_MODE}`));
+app.get('/', (req, res) => res.send(`Agente Lucas v8.7 - mode=${ENFORCEMENT_MODE}`));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor v8.6 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
+  console.log(`Servidor v8.7 rodando na porta ${PORT} | MODE=${ENFORCEMENT_MODE}`);
 });
